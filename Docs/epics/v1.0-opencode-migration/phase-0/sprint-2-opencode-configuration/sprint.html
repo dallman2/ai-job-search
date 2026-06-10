@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 2: opencode.json Configuration — Phase 0 — v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.0-opencode-migration" data-phase="0" data-sprint="2" data-status="active">
+
+<header>
+  <h1>Sprint 2: opencode.json Configuration</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 2</span>
+    <span>Depends on: Sprint 0</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Create the <code>opencode.json</code> configuration file that defines tool permissions, registers all 7 skills, and defines 2 subagent stubs (reviewer and research-expert). This replaces <code>.claude/settings.local.json</code> and the <code>allowed-tools</code> frontmatter that was stripped in Sprint 1. Full subagent system prompts will be written in Phase 1; this sprint creates the configuration shell with stub prompts.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>opencode centralizes all configuration in <code>opencode.json</code> at the repo root. This is the single source of truth for:</p>
+  <ul>
+    <li><strong>Permissions</strong>: which tools and Bash commands the model is allowed to use (replaces per-skill <code>allowed-tools</code>)</li>
+    <li><strong>Skill registration</strong>: which skills are available for the <code>skill</code> tool to load (replaces Claude Code's implicit directory-based discovery)</li>
+    <li><strong>Subagent definitions</strong>: named agents with system prompts, tool access, and model configurations (replaces <code>.claude/agents/</code> and ad-hoc inline prompt construction)</li>
+  </ul>
+  <p>The old <code>.claude/settings.local.json</code> was a simple allowlist: "allow Skill(job-application-assistant), Bash(python3:*), Bash(python:*), Bash(curl:*), Bash(bun:*)." The new <code>opencode.json</code> does the same job but also registers all 7 skills and defines the 2 subagents that the workflow dispatches.</p>
+  <p>This sprint must study opencode's configuration schema before writing. Caroline's <code>.opencode/</code> directory contains working examples of how opencode agents and skills are configured.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Study opencode's <code>opencode.json</code> schema from opencode documentation</li>
+      <li>Study caroline's <code>.opencode/</code> configuration for working examples</li>
+      <li>Create <code>opencode.json</code> with permissions block</li>
+      <li>Register all 7 skills from both <code>.opencode/skills/</code> and <code>.agents/skills/</code></li>
+      <li>Define 2 subagent stubs (reviewer, research-expert) with placeholder system prompts</li>
+      <li>Create <code>.opencode/instructions/</code> directory for system instructions if opencode supports it</li>
+      <li>Validate JSON syntax</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Writing complete subagent system prompts (Phase 1 Sprint 4 for reviewer; Phase 1 Sprint 3 for research-expert)</li>
+      <li>Writing new skill content (Phase 1)</li>
+      <li>Testing configuration end-to-end (Phase 2)</li>
+      <li>Modifying existing skill files</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Research opencode Configuration Schema</h3>
+  <ol>
+    <li data-task-id="2.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.1: Fetch opencode configuration documentation</strong>
+        <data data-files="opencode.json"></data>
+        <p>Use <code>WebFetch</code> to retrieve opencode's configuration schema from <code>https://opencode.ai</code> or the opencode GitHub repository. Document the JSON structure for: permissions, skills registration, subagents/agents, instructions. Note any differences from Claude Code's model.</p>
+      </div>
+    </li>
+    <li data-task-id="2.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.2: Study caroline's opencode configuration</strong>
+        <p>Read caroline's <code>.opencode/</code> directory structure and any <code>opencode.json</code> or equivalent config files. Extract the working pattern for: (a) how skills are registered, (b) how subagents are defined with system prompts and tool access, (c) how permissions are structured. Use this as the template for our config.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Permissions Block</h3>
+  <ol>
+    <li data-task-id="2.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.3: Define tool permissions</strong>
+        <data data-files="opencode.json"></data>
+        <p>Write the permissions block allowing all tools the workflow needs:</p>
+        <ul>
+          <li><strong>Bash</strong>: <code>python3:*</code>, <code>python:*</code> (salary lookup tool), <code>bun:*</code> (CLI job search tools), <code>lualatex:*</code> (CV compilation), <code>xelatex:*</code> (cover letter compilation), <code>curl:*</code> (web requests if needed)</li>
+          <li><strong>File operations</strong>: Read, Write, Edit, Glob, Grep (all standard file operations)</li>
+          <li><strong>Web operations</strong>: WebFetch (job posting retrieval, company research)</li>
+          <li><strong>Agent operations</strong>: Task (subagent dispatch), Question (user prompts)</li>
+        </ul>
+        <p>Use the format from opencode's schema, not Claude Code's <code>settings.local.json</code> format.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Skill Registration</h3>
+  <ol>
+    <li data-task-id="2.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.4: Register all 7 skills</strong>
+        <data data-files="opencode.json"></data>
+        <p>Register the skills so opencode's <code>skill</code> tool can load them:</p>
+        <ul>
+          <li><code>.opencode/skills/job-application-assistant/</code> &mdash; core application workflow</li>
+          <li><code>.opencode/skills/job-scraper/</code> &mdash; job search orchestration</li>
+          <li><code>.opencode/skills/upskill/</code> &mdash; skill gap analysis</li>
+          <li><code>.agents/skills/jobindex-search/</code> &mdash; Jobindex.dk CLI</li>
+          <li><code>.agents/skills/jobbank-search/</code> &mdash; Jobbank.dk CLI</li>
+          <li><code>.agents/skills/jobnet-search/</code> &mdash; Jobnet.dk CLI</li>
+          <li><code>.agents/skills/jobdanmark-search/</code> &mdash; Jobdanmark.dk CLI</li>
+        </ul>
+        <p>Note: the 4 CLI skills are already recognized by opencode (they appear in the available_skills system prompt list). Registration in <code>opencode.json</code> may be optional for these, but include them for completeness.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Subagent Definitions (Stubs)</h3>
+  <ol>
+    <li data-task-id="2.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.5: Define reviewer subagent stub</strong>
+        <data data-files="opencode.json"></data>
+        <p>Define the reviewer subagent with a stub system prompt and read-only tool access. The full prompt will be written in Phase 1 Sprint 4. For now:</p>
+        <ul>
+          <li><strong>Name</strong>: <code>reviewer</code></li>
+          <li><strong>Description</strong>: "Reviews job application drafts for targeting, missed keywords, company alignment, tone, and factual accuracy."</li>
+          <li><strong>Tools</strong>: Read, WebFetch (read-only &mdash; no Write/Bash)</li>
+          <li><strong>System prompt</strong>: Placeholder indicating the full prompt arrives in Phase 1</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="2.6">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.6: Define research-expert subagent stub</strong>
+        <data data-files="opencode.json"></data>
+        <p>Define the research-expert subagent stub. The old agent used a <code>gemini</code> CLI tool that may not exist in opencode; the new version will use WebFetch:</p>
+        <ul>
+          <li><strong>Name</strong>: <code>research-expert</code></li>
+          <li><strong>Description</strong>: "Researches companies, technologies, and market context for job applications."</li>
+          <li><strong>Tools</strong>: WebFetch, Read</li>
+          <li><strong>System prompt</strong>: Placeholder indicating the full prompt arrives in Phase 1</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>5. System Instructions</h3>
+  <ol>
+    <li data-task-id="2.7">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.7: Set up system instructions (if opencode supports it)</strong>
+        <data data-files=".opencode/instructions/"></data>
+        <p>If opencode supports a system instructions file or directory (analogous to Claude Code's auto-loading of <code>CLAUDE.md</code>), create <code>.opencode/instructions/</code> and determine how to load <code>OPENDOC.md</code>. If opencode uses a different mechanism, document it and configure accordingly. This ensures the candidate profile and workflow rules are loaded as system context when the model starts.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>6. Validation</h3>
+  <ol>
+    <li data-task-id="2.8">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.8: Validate opencode.json</strong>
+        <data data-files="opencode.json"></data>
+        <p>Verify the JSON is syntactically valid (<code>python3 -c "import json; json.load(open('opencode.json'))"</code>). Verify the structure matches opencode's schema by cross-referencing with documentation and caroline's config. Check that all skill paths resolve to existing directories. Check that all tool names match opencode's tool vocabulary.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Configuration format</td><td>JSON (<code>opencode.json</code>)</td></tr>
+      <tr><td>Reference</td><td>opencode docs + caroline <code>.opencode/</code> examples</td></tr>
+      <tr><td>Validation</td><td>Python <code>json</code> module, manual schema check</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span><code>opencode.json</code> exists at repo root</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>JSON is syntactically valid (parses without errors)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Permissions block covers: Bash(python3, python, bun, lualatex, xelatex, curl), Read, Write, Edit, Glob, Grep, WebFetch, Task, Question</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>All 7 skills are registered (paths resolve to existing directories)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Reviewer subagent is defined with: name, description, read-only tool access, placeholder system prompt</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Research-expert subagent is defined with: name, description, WebFetch+Read tool access, placeholder system prompt</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>No <code>allowed-tools</code> directives remain in any skill file (verified in Sprint 1; cross-checked here)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>System instructions mechanism is configured (either <code>.opencode/instructions/</code> or equivalent)</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v1.0-opencode-migration</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0: Foundation</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 2: opencode.json Configuration</span>
+</nav>
+
+</article>
+
+</body>
+</html>

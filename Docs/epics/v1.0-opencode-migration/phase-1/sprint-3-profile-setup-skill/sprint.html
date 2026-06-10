@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 3: Profile Setup &amp; Management Skill — Phase 1 — v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.0-opencode-migration" data-phase="1" data-sprint="3" data-status="planned">
+
+<header>
+  <h1>Sprint 3: Profile Setup &amp; Management Skill</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 3</span>
+    <span>Depends on: Phase 1 Sprint 0 (conventions)</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Create a new <code>profile-setup</code> skill that replaces the old <code>/setup</code> and <code>/reset</code> slash commands (deleted in Phase 0 Sprint 0). This skill guides the user through initial profile population and ongoing profile management &mdash; replacing placeholder tokens across <code>OPENDOC.md</code> and profile files with real data, validating profile completeness, and supporting incremental updates.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>Under Claude Code, profile setup was a slash command (<code>/setup</code>) that walked the user through a form-filling workflow. Profile reset was a separate command (<code>/reset</code>) for re-running setup. Both were deleted when <code>.claude/commands/</code> was removed in Sprint 0.8.</p>
+  <p>In the opencode model, profile setup is a <em>skill</em> the model loads when the user says they want to set up their profile. The skill does not dictate a rigid form-filling order; it declares what the profile needs to contain, which files hold which sections, and lets the model guide the user conversationally through population and validation.</p>
+  <p>This is the only Phase 1 skill that is created from scratch (the other three are rewrites of existing skills). However, it has clearly defined scope: the candidate profile sections are well-documented across <code>OPENDOC.md</code> and the 7 profile files in <code>job-application-assistant/</code>. The skill&rsquo;s job is to know what goes where and guide the user through filling it in.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Create <code>.opencode/skills/profile-setup/</code> directory with <code>SKILL.md</code></li>
+      <li>Write a goal-oriented skill for profile population, validation, and updates (target &lt;60 lines)</li>
+      <li>Define a profile file map documenting which sections live in which files</li>
+      <li>Define update workflows: add experience, update skills, change career goals, adjust deal-breakers, update behavioral traits</li>
+      <li>Define profile completeness validation rules</li>
+      <li>Register the new skill in <code>opencode.json</code></li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Modifying <code>OPENDOC.md</code> structure (the skill reads and writes it, but does not redesign its sections)</li>
+      <li>Modifying any of the 7 profile files in <code>job-application-assistant/</code> (the skill reads and writes them; content structure stays)</li>
+      <li>Importing or parsing LinkedIn exports, CVs, or external profile data (future enhancement)</li>
+      <li>Integrating with the behavioral assessment framework (the skill can ask about traits but does not administer assessments)</li>
+      <li>Creating a web UI or form for profile editing</li>
+    </ul>
+  </section>
+</section>
+
+<section id="profile-file-map">
+  <h2>Profile File Map (Reference for Skill)</h2>
+  <p>This section documents the files and placeholder tokens the profile-setup skill must know about. It is included in the sprint plan so the skill author has a complete reference during Task 1.3.1.</p>
+
+  <table>
+    <thead><tr><th>File</th><th>Section</th><th>Key Placeholder Tokens</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>OPENDOC.md</code></td>
+        <td>Identity, Education, Professional Experience, Technical Skills, Certifications, Publications, Awards, Behavioral Profile, What Excites You, Target Sectors, Deal-breakers</td>
+        <td>[YOUR_NAME], [YOUR_CITY], [YOUR_COUNTRY], [YOUR_LANGUAGES], etc. (see full list inline)</td>
+      </tr>
+      <tr>
+        <td><code>01-candidate-profile.md</code></td>
+        <td>Identity (detailed: phone, email, LinkedIn, GitHub), Education, Professional Experience, Independent Projects, Technical Skills, Publications, Awards, References</td>
+        <td>[YOUR_NAME], [YOUR_ADDRESS], [YOUR_PHONE], [YOUR_EMAIL], [YOUR_LINKEDIN_URL], [YOUR_GITHUB_URL], [YOUR_LANGUAGES with proficiency levels], [YOUR_EMPLOYMENT_STATUS], [YOUR_COMMUTE_OR_LOCATION_CONSTRAINTS]</td>
+      </tr>
+      <tr>
+        <td><code>02-behavioral-profile.md</code></td>
+        <td>Behavioral assessment results, strengths, growth areas, ideal environments</td>
+        <td>Content populated during setup; no explicit placeholder tokens</td>
+      </tr>
+      <tr>
+        <td><code>03-writing-style.md</code></td>
+        <td>Tone, structure, do&rsquo;s and don&rsquo;ts for cover letters/CVs</td>
+        <td>Mostly static (style rules); line 80 had &ldquo;Claude Code&rdquo; &rarr; &ldquo;opencode&rdquo; reference fixed in Sprint 1</td>
+      </tr>
+      <tr>
+        <td><code>04-job-evaluation.md</code></td>
+        <td>Scoring dimensions, skill match areas, experience domains, career goals, motivation filter, life situation alignment</td>
+        <td>[YOUR_PRIMARY_SKILLS], [YOUR_SECONDARY_SKILLS], [SKILLS_YOU_LACK], [YOUR_DIRECT_EXPERIENCE_DOMAINS], [YOUR_ADJACENT_EXPERIENCE], [ROLES_WITH_LIMITED_EXPERIENCE], [YOUR_CAREER_GOAL_1/2/3], [YOUR_ENERGIZING_TASKS], [YOUR_DRAINING_TASKS], [YOUR_FINANCIAL_SITUATION_CONTEXT], [YOUR_SCHEDULE_CONSTRAINTS], [YOUR_GROWTH_PRIORITIES]</td>
+      </tr>
+      <tr>
+        <td><code>05-cv-templates.md</code></td>
+        <td>LaTeX CV template structure, tailoring rules</td>
+        <td>Mostly static (template rules)</td>
+      </tr>
+      <tr>
+        <td><code>06-cover-letter-templates.md</code></td>
+        <td>LaTeX cover letter template structure, tailoring rules</td>
+        <td>Mostly static (template rules)</td>
+      </tr>
+      <tr>
+        <td><code>07-interview-prep.md</code></td>
+        <td>STAR examples, tough questions, roleplay guidelines</td>
+        <td>Content populated during setup; no explicit placeholder tokens</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Create Profile Setup SKILL.md</h3>
+  <ol>
+    <li data-task-id="1.3.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.3.1: Create profile-setup SKILL.md</strong>
+        <data data-files=".opencode/skills/profile-setup/SKILL.md"></data>
+        <p>Create the new directory <code>.opencode/skills/profile-setup/</code> and write a goal-oriented SKILL.md (&lt;60 lines).</p>
+        <p><strong>Goal statement</strong>: &ldquo;Your purpose is to help the candidate populate, validate, and maintain their career profile across all profile files in the repo.&rdquo;</p>
+        <p><strong>Sub-goals</strong> (expressed as constraint branches the model navigates based on user intent):</p>
+        <ul>
+          <li><em>Initial population</em>: The user is setting up their profile for the first time. Guide them through filling in every section, starting with the most important: identity and contact details, then education and experience, then skills, then career goals and preferences. Replace every <code>[PLACEHOLDER_TOKEN]</code> in <code>OPENDOC.md</code> and the profile files with the user&rsquo;s actual information.</li>
+          <li><em>Validation</em>: After any change, check profile completeness. Flag missing or placeholder-populated fields. Check that <code>OPENDOC.md</code> and <code>01-candidate-profile.md</code> are consistent (no contradictory information). Check that <code>04-job-evaluation.md</code> scoring dimensions reference real profile data, not placeholder tokens.</li>
+          <li><em>Update existing profile</em>: The user wants to modify an existing section. Identify which file(s) contain that section (see profile file map). Ask for the new information, then update the relevant files.</li>
+        </ul>
+        <p><strong>Profile file map</strong> (embedded as a constraint so the skill knows what lives where):</p>
+        <ul>
+          <li><code>OPENDOC.md</code>: Identity, education, professional experience, technical skills, certifications, publications, awards, behavioral profile (summary), what excites you, target sectors, deal-breakers.</li>
+          <li><code>.opencode/skills/job-application-assistant/01-candidate-profile.md</code>: Extended identity (phone, email, LinkedIn, GitHub), education (detailed), professional experience (detailed), independent projects, technical skills (detailed), publications, awards, references.</li>
+          <li><code>.opencode/skills/job-application-assistant/02-behavioral-profile.md</code>: Behavioral assessment results, strengths, growth areas, ideal environments.</li>
+          <li><code>.opencode/skills/job-application-assistant/04-job-evaluation.md</code>: Skill match areas (strong/moderate/weak), experience match domains, career goals, motivation filter, life situation alignment.</li>
+          <li><code>.opencode/skills/job-application-assistant/03-writing-style.md</code>: Writing style rules (mostly static; rarely modified during profile updates).</li>
+          <li><code>.opencode/skills/job-application-assistant/05-cv-templates.md</code> and <code>06-cover-letter-templates.md</code>: Template rules (static; not modified during profile setup).</li>
+          <li><code>.opencode/skills/job-application-assistant/07-interview-prep.md</code>: STAR examples, tough questions (populated during setup, updated as user gains interview experience).</li>
+        </ul>
+        <p><strong>Update workflows</strong> (constraints the model applies when the user has a specific update):</p>
+        <ul>
+          <li><em>Add experience</em>: User has a new role. Update the Professional Experience section in both <code>OPENDOC.md</code> and <code>01-candidate-profile.md</code>. Add new experience domains to <code>04-job-evaluation.md</code> if the role expands capability.</li>
+          <li><em>Update skills</em>: User has learned a new skill or wants to adjust proficiency. Update the Technical Skills section in <code>OPENDOC.md</code> and <code>01-candidate-profile.md</code>. Update skill match areas in <code>04-job-evaluation.md</code>.</li>
+          <li><em>Change career goals</em>: Update the Career Goals section in <code>04-job-evaluation.md</code> and the What Excites You / Target Sectors sections in <code>OPENDOC.md</code>.</li>
+          <li><em>Update deal-breakers</em>: Update the Deal-breakers section in <code>OPENDOC.md</code>.</li>
+          <li><em>Update behavioral traits</em>: Update the Behavioral Profile section in <code>OPENDOC.md</code> and <code>02-behavioral-profile.md</code>.</li>
+          <li><em>Add publication/award</em>: Update the relevant section in both <code>OPENDOC.md</code> and <code>01-candidate-profile.md</code>.</li>
+        </ul>
+        <p><strong>Validation rules</strong> (constraints applied after any change):</p>
+        <ul>
+          <li>No <code>[PLACEHOLDER]</code> tokens remain. If any are found, flag the incomplete section.</li>
+          <li><code>OPENDOC.md</code> and <code>01-candidate-profile.md</code> do not contradict each other (e.g., different job titles listed for the same role).</li>
+          <li>Career goals in <code>04-job-evaluation.md</code> reference real skills from the profile, not placeholders.</li>
+          <li>Deal-breakers are specific and actionable (not generic like &ldquo;bad culture&rdquo;).</li>
+          <li>After validation, print a profile completeness summary: which sections are filled, which have placeholders, and any inconsistencies found.</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Register the Skill and Validate</h3>
+  <ol>
+    <li data-task-id="1.3.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.3.2: Register profile-setup in opencode.json</strong>
+        <data data-files="opencode.json"></data>
+        <p>Add <code>.opencode/skills/profile-setup/</code> to the skills registration block in <code>opencode.json</code>. If the skill registration is done via <code>opencode.json</code> skill list, add the entry. If opencode auto-discovers skills from the <code>.opencode/skills/</code> directory, verify the new skill is picked up.</p>
+        <p>Ensure <code>opencode.json</code> remains syntactically valid after the addition.</p>
+      </div>
+    </li>
+    <li data-task-id="1.3.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.3.3: Verify profile-setup skill end-to-end</strong>
+        <data data-files=".opencode/skills/profile-setup/SKILL.md"></data>
+        <p>Verify the new skill works across all scenarios:</p>
+        <ul>
+          <li>Skill loads via the <code>skill</code> tool (open with &ldquo;set up my profile&rdquo; or &ldquo;update my profile&rdquo;)</li>
+          <li><strong>Initial population</strong>: All placeholder tokens across all files are identified and filled conversationally. OPENDOC.md and profile files are consistent.</li>
+          <li><strong>Validation</strong>: Completeness check flags remaining placeholders. Consistency check catches contradictions between files.</li>
+          <li><strong>Update existing profile</strong>: Add experience works (both OPENDOC.md and 01-candidate-profile.md updated). Update skills works (skills and 04-job-evaluation.md updated). Change career goals works. Update deal-breakers works. Update behavioral traits works.</li>
+          <li><strong>Partial setup</strong>: User can set up identity and skills without filling in behavioral profile or interview prep.</li>
+          <li>Skill does not overwrite user-filled data when running validation (read-only inspection unless explicitly asked to change).</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Skill file</td><td>Markdown (<code>SKILL.md</code>) &mdash; goal-oriented instruction language</td></tr>
+      <tr><td>Profile storage</td><td>Markdown files (<code>OPENDOC.md</code>, <code>01&ndash;07-*.md</code>)</td></tr>
+      <tr><td>Token replacement</td><td>Edit tool (replace <code>[PLACEHOLDER]</code> with actual values)</td></tr>
+      <tr><td>Validation</td><td>Read + Grep (check for remaining placeholders, consistency)</td></tr>
+      <tr><td>Registration</td><td>JSON in <code>opencode.json</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span><code>.opencode/skills/profile-setup/SKILL.md</code> exists and opens with &ldquo;Your purpose is to&hellip;&rdquo; goal statement</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Skill is &lt;60 lines</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Profile file map is embedded in the skill as a constraint (model knows which sections live in which files)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Initial population workflow works: all placeholder tokens identified and replaceable</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Validation catches: remaining placeholders, <code>OPENDOC.md</code> and <code>01-candidate-profile.md</code> contradictions, career-goal-to-skill gaps</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Update workflows work: add experience, update skills, change career goals, update deal-breakers, update behavioral traits, add publication/award</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Skill is registered in <code>opencode.json</code></span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>opencode.json</code> remains syntactically valid after adding the skill registration</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Skill loads via the <code>skill</code> tool and dispatches correctly</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v1.0-opencode-migration</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Workflow Migration</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 3: Profile Setup &amp; Management Skill</span>
+</nav>
+
+</article>
+
+</body>
+</html>

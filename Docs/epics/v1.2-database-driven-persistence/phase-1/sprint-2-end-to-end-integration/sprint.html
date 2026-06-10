@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 2: End-to-End Integration Test &amp; Cleanup — Phase 1 — v1.2-database-driven-persistence</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.2-database-driven-persistence" data-phase="1" data-sprint="2" data-status="completed">
+
+<header>
+  <h1>Sprint 2: End-to-End Integration Test &amp; Cleanup</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 2</span>
+    <span>Depends on: Sprint 1 (Upskill Data Fix)</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Run a full end-to-end integration test of the entire job search pipeline with the database backend: scrape → store → query → evaluate → apply → upskill. Verify every state transition, deduplication behavior, and edge case. After successful validation, finalize the cleanup: delete the archived <code>.bak</code> files, verify <code>.gitignore</code> coverage, and document the new infrastructure in OPENDOC.md. Mark the epic as complete.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>At this point, all infrastructure is built and all skill files are updated, but no integration test has confirmed that the pieces actually work together. The scraper skill now references <code>db/client.py</code> commands, the upskill skill reads from the database, and the API is running on kind — but a single end-to-end flow will reveal gaps in error handling, missing query parameters, edge cases in the dedup logic, and documentation inconsistencies.</p>
+  <p>This sprint is deliberately lightweight on code changes. If the previous sprints were done correctly, this sprint is mostly verification with minor fixes. If issues are found, they should be fixed inline and the sprint plan updated.</p>
+  <p>After verification, the cleanup is irreversible: the archived <code>.bak</code> files are deleted. This is the point of no return — the database is the sole source of truth.</p>
+</section>
+
+<section id="files-to-modify">
+  <h2>Files to Modify</h2>
+  <table>
+    <thead><tr><th>File</th><th>Change</th></tr></thead>
+    <tbody>
+      <tr><td><code>OPENDOC.md</code></td><td>Add "Infrastructure Prerequisites" section documenting the kind cluster and SQLite API</td></tr>
+      <tr><td><code>.gitignore</code></td><td>Verify <code>data/</code>, <code>seen_jobs.json.bak</code>, and <code>job_search_tracker.csv.bak</code> are covered</td></tr>
+      <tr><td>Archived files</td><td>Delete <code>job_scraper/seen_jobs.json.bak</code> and <code>job_search_tracker.csv.bak</code> (after verification)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Integration Test: Scrape Flow</h3>
+  <ol>
+    <li data-task-id="5.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 5.1: Test "scrape jobs fast" with DB backend</strong>
+        <p>With the kind cluster and API running:</p>
+        <ol>
+          <li>Verify DB is reachable: <code>python3 db/client.py health</code> → <code>{"status": "ok"}</code></li>
+          <li>Record pre-scrape state: <code>python3 db/client.py stats</code> → note total_jobs count</li>
+          <li>Run "scrape jobs fast" (AI executes scraper skill)</li>
+          <li>Verify the scraper checks DB health before starting (per updated SKILL.md)</li>
+          <li>Verify the scraper uses <code>jobs check --dedup-key</code> for pre-filtering</li>
+          <li>Verify new jobs are inserted via <code>jobs insert</code></li>
+          <li>Verify 409 responses for duplicates are handled gracefully (not crash)</li>
+          <li>Verify run history is logged: <code>python3 db/client.py scrape-runs list --limit 1</code></li>
+          <li>Verify post-scrape stats: <code>python3 db/client.py stats</code> → total_jobs has increased (or stayed same if no new jobs)</li>
+        </ol>
+      </div>
+    </li>
+    <li data-task-id="5.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 5.2: Test deduplication across runs</strong>
+        <p>Run "scrape jobs fast" a second time immediately after the first:</p>
+        <ul>
+          <li>All previously seen URLs should return 409 Conflict</li>
+          <li>Only genuinely new jobs (if any) should be inserted</li>
+          <li>The output should report: "X jobs found from Y companies. 0 new since last run."</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Integration Test: Evaluation &amp; Application Flow</h3>
+  <ol>
+    <li data-task-id="5.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 5.3: Test job evaluation flow</strong>
+        <p>Pick a job from the scrape output (by its database ID):</p>
+        <ol>
+          <li>Load the job: <code>python3 db/client.py jobs get &lt;id&gt;</code> → verify full description_md is present</li>
+          <li>Run full 5-dimension evaluation (job-application-assistant skill)</li>
+          <li>After evaluation, update: <code>python3 db/client.py jobs update &lt;id&gt; --status evaluated --evaluation-score 85</code></li>
+          <li>Verify: <code>python3 db/client.py jobs get &lt;id&gt;</code> → status is "evaluated", evaluation_score is 85</li>
+        </ol>
+      </div>
+    </li>
+    <li data-task-id="5.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 5.4: Test application tracking flow</strong>
+        <p>Simulate an application submission:</p>
+        <ol>
+          <li>Generate CV and cover letter (job-application-assistant skill)</li>
+          <li>After user confirms: <code>python3 db/client.py jobs update &lt;id&gt; --status applied --applied-date "2026-06-09" --notes "CV: applications/company/resume.md, CL: applications/company/cover_letter.md"</code></li>
+          <li>Verify: <code>python3 db/client.py jobs get &lt;id&gt;</code> → status is "applied", applied_date and notes are set</li>
+          <li>Verify: <code>python3 db/client.py jobs list --status applied</code> returns the job</li>
+          <li>Verify: <code>python3 db/client.py jobs list --status new</code> does NOT return the job (it transitioned out of "new")</li>
+        </ol>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Integration Test: Upskill Flow</h3>
+  <ol>
+    <li data-task-id="5.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 5.5: Test upskill in aggregate mode</strong>
+        <p>With at least one job in status "evaluated" or "applied":</p>
+        <ol>
+          <li>Run upskill (aggregate mode): the skill should query <code>python3 db/client.py skills aggregate --status applied --status evaluated</code></li>
+          <li>Verify the Gap Heatmap has &gt; 0 entries (the evaluated/applied jobs have descriptions with skills)</li>
+          <li>Verify the Learning Plan has study resources found via WebFetch</li>
+          <li>Verify the report saves to <code>upskill/report-2026-06-09.md</code></li>
+          <li>Verify "Since Last Report" diff works (run twice, second run shows comparison)</li>
+        </ol>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Edge Case Testing</h3>
+  <ol>
+    <li data-task-id="5.6">
+      <input type="checkbox">
+      <div>
+        <strong>Task 5.6: Test error scenarios</strong>
+        <table>
+          <thead><tr><th>Scenario</th><th>Expected Behavior</th></tr></thead>
+          <tbody>
+            <tr><td>API unreachable (kind cluster down)</td><td>Scraper reports "SQLite API not reachable" and aborts gracefully. No partial state.</td></tr>
+            <tr><td>Duplicate URL insert</td><td>Returns 409. Scraper logs "Already tracked" and continues.</td></tr>
+            <tr><td>Invalid fit_rating value</td><td>API returns 422 with field-level validation error. Scraper reports the issue.</td></tr>
+            <tr><td>Missing required field (no URL)</td><td>API returns 422. Scraper reports which job failed and continues.</td></tr>
+            <tr><td>Job ID not found on update</td><td>API returns 404. Scraper reports the error.</td></tr>
+            <tr><td>Very long description (&gt; 100KB markdown)</td><td>TEXT column in SQLite stores up to 1GB. No truncation needed. API handles gracefully.</td></tr>
+            <tr><td>FTS5 search with special characters</td><td>SQLite FTS5 handles quoting internally. No injection risk.</td></tr>
+            <tr><td>Simultaneous scrape runs (not expected but defensive)</td><td>WAL mode allows concurrent reads and single writer. SQLite serializes writes. No data corruption.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </li>
+  </ol>
+
+  <h3>5. Cleanup</h3>
+  <ol>
+    <li data-task-id="5.7">
+      <input type="checkbox">
+      <div>
+        <strong>Task 5.7: Delete archived backup files</strong>
+        <p>After all integration tests pass:</p>
+        <ul>
+          <li><code>rm job_scraper/seen_jobs.json.bak</code></li>
+          <li><code>rm job_search_tracker.csv.bak</code></li>
+          <li>Verify these files are in <code>.gitignore</code> (they should already be covered by existing entries + the new <code>data/</code> entry)</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="5.8">
+      <input type="checkbox">
+      <div>
+        <strong>Task 5.8: Verify .gitignore coverage</strong>
+        <data data-files=".gitignore"></data>
+        <p>Confirm the following are covered:</p>
+        <ul>
+          <li><code>data/</code> — added in Phase 0 Sprint 2</li>
+          <li><code>job_scraper/seen_jobs.json</code> — existing entry (line 23), now redundant since the file is deleted</li>
+          <li><code>job_search_tracker.csv</code> — existing entry (line 63), now redundant since the file is deleted</li>
+        </ul>
+        <p>No changes needed — everything is covered.</p>
+      </div>
+    </li>
+    <li data-task-id="5.9">
+      <input type="checkbox">
+      <div>
+        <strong>Task 5.9: Document infrastructure in OPENDOC.md</strong>
+        <data data-files="OPENDOC.md"></data>
+        <p>Add an "Infrastructure Prerequisites" section before "Repo Structure":</p>
+        <pre><code>## Infrastructure Prerequisites
+
+Before scraping jobs, start the SQLite API on the local kind cluster:
+
+    bash db/start-cluster.sh
+
+Verify the API is reachable:
+
+    python3 db/client.py health
+
+The database file lives at ./data/job-search.db (persisted on the host filesystem
+via kind extraMounts). The API is accessible at http://localhost:30080.
+
+To stop the cluster (data persists):
+
+    kind delete cluster --name job-search-local
+
+To restart (data intact):
+
+    bash db/start-cluster.sh</code></pre>
+      </div>
+    </li>
+    <li data-task-id="5.10">
+      <input type="checkbox">
+      <div>
+        <strong>Task 5.10: Final documentation — mark epic as complete</strong>
+        <p>Update the epic overview's <code>data-status</code> attribute to <code>"completed"</code>. Update each sprint's <code>data-status</code> to <code>"completed"</code>. Check all checkboxes in the Epic Acceptance Criteria section.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> "scrape jobs fast" runs end-to-end with the database as the persistence layer</li>
+    <li><input type="checkbox"> No references to <code>seen_jobs.json</code> or <code>job_search_tracker.csv</code> remain in any skill file</li>
+    <li><input type="checkbox"> All 12 epic acceptance criteria (from the epic overview) pass</li>
+    <li><input type="checkbox"> Deduplication works across multiple scrape runs (same URL → 409 → skipped)</li>
+    <li><input type="checkbox"> Job lifecycle transitions (new → evaluated → applied) persist correctly</li>
+    <li><input type="checkbox"> The upskill skill produces a non-empty Gap Heatmap when applied jobs exist</li>
+    <li><input type="checkbox"> All error scenarios (API down, duplicate URL, invalid data, missing resource) are handled gracefully</li>
+    <li><input type="checkbox"> The kind cluster can be deleted and recreated without data loss</li>
+    <li><input type="checkbox"> <code>seen_jobs.json.bak</code> and <code>job_search_tracker.csv.bak</code> are deleted</li>
+    <li><input type="checkbox"> OPENDOC.md documents the infrastructure prerequisites</li>
+    <li><input type="checkbox"> The job-application-assistant skill works without changes (CV/cover letter generation, interview prep)</li>
+    <li><input type="checkbox"> The profile-setup skill works without changes (profile management)</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.2-database-driven-persistence</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Orchestration Cutover &amp; Integration</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 2: End-to-End Integration Test &amp; Cleanup</span>
+</nav>
+
+</article>
+
+</body>
+</html>

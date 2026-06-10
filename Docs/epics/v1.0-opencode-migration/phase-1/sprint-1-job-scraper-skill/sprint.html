@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 1: Job Scraper Skill — Phase 1 — v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.0-opencode-migration" data-phase="1" data-sprint="1" data-status="planned">
+
+<header>
+  <h1>Sprint 1: Job Scraper Skill</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 1</span>
+    <span>Depends on: Phase 1 Sprint 0 (conventions)</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Transform <code>job-scraper/SKILL.md</code> from a Step 0&rarr;1&rarr;2&rarr;3&rarr;4&rarr;5&rarr;6 procedural recipe into a goal-oriented skill (&lt;70 lines). The scraper searches Danish job portals for new matching positions, deduplicates against seen jobs and the application tracker, performs a quick fit assessment, and presents results sorted by fit with handoff to the job-application-assistant skill.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>The job-scraper is the discovery engine of the repo. It coordinates CLI job portal tools (jobindex, jobbank, jobnet, jobdanmark) with state management (<code>seen_jobs.json</code>) and the application tracker. The current SKILL.md (109 lines) has extensive procedural scaffolding &mdash; Step 0 Load State, Step 1 Search, Step 2 Fetch &amp; Parse, Step 3 Quick Fit, Step 4 Deduplicate, Step 5 Present Results, Step 6 Update Tracker &mdash; plus an &ldquo;Important Rules&rdquo; section that lists constraints separately from the steps they govern.</p>
+  <p>In the goal-oriented model, the model should understand <em>what</em> the scraper achieves and <em>what constraints</em> bind it, then determine the execution path dynamically. The step-by-step order is already the logical order any model would pick; the step enumeration adds noise, not structure.</p>
+  <p>The search-queries.md file and the CLI tool invocations are tool references that stay intact; only the <em>language directing the model</em> changes.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Rewrite <code>job-scraper/SKILL.md</code> into goal-oriented format (target &lt;70 lines)</li>
+      <li>Remove Step 0&ndash;6 enumeration; express workflow as goal + constraints</li>
+      <li>Merge &ldquo;Important Rules&rdquo; into the constraint body (rules that govern specific phases should be inline with those phases)</li>
+      <li>Preserve <code>search-queries.md</code> integration as a configurable strategy reference</li>
+      <li>Preserve deduplication logic, fit assessment framework, and output table format</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Modifying <code>search-queries.md</code> (it is configurable data, not procedural instruction)</li>
+      <li>Modifying the 4 CLI job portal tools in <code>.agents/skills/</code></li>
+      <li>Changing the <code>seen_jobs.json</code> data format</li>
+      <li>Modifying <code>job_search_tracker.csv</code> structure</li>
+      <li>Adding new job portals or search strategies</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Rewrite Job Scraper SKILL.md</h3>
+  <ol>
+    <li data-task-id="1.1.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.1.1: Rewrite SKILL.md as goal-oriented skill</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Transform the 109-line procedural SKILL.md into a goal-oriented format (&lt;70 lines).</p>
+        <p><strong>Goal statement</strong>: &ldquo;Your purpose is to search Danish job portals for new positions matching the candidate&rsquo;s profile, deduplicate against previously seen jobs, and present ranked results.&rdquo;</p>
+        <p><strong>Domain constraints to preserve</strong> (expressed as rules, not ordered steps):</p>
+        <ul>
+          <li><em>State loading</em>: Before searching, read <code>job_scraper/seen_jobs.json</code> (create empty if missing) and <code>job_search_tracker.csv</code> to extract already-applied companies and roles. Know the deduplication keys before you search.</li>
+          <li><em>Search strategy</em>: Read <code>search-queries.md</code> for configured search categories. Run the top 3 priority categories by default; run all categories if the user asks for a broad search; prioritize a specific category if the user names a focus area. Use the job portal CLI tools (jobindex-search, jobbank-search, jobnet-search, jobdanmark-search) for structured search. Target the configured geographic area and postings from the last 14 days.</li>
+          <li><em>Pre-filter before fetching</em>: Use titles and snippets to decide which results are worth fetching. Do not WebFetch every search result.</li>
+          <li><em>Fetching</em>: For each promising result, use WebFetch to extract: job title, company, location, posting date (or &ldquo;recent&rdquo;), URL, key requirements (brief), and application deadline if listed. Skip any URL or company+title combo already in <code>seen_jobs.json</code>. Skip any company+role already in <code>job_search_tracker.csv</code>.</li>
+          <li><em>Deduplication</em>: After fetching, add ALL jobs (new and skipped) to <code>seen_jobs.json</code> with title, company, URL, first_seen date, fit rating, and status. Only present jobs not already in the seen list or tracker.</li>
+          <li><em>Quick fit assessment</em>: Rate each new job as High Match (core skills), Medium Match (adjacent experience), or Low Match (significant skill gaps). This is a rapid signal, not the full evaluation framework from <code>04-job-evaluation.md</code>.</li>
+          <li><em>Output format</em>: Present new jobs in a table sorted by fit (high first), with columns for Title, Company, Location, Deadline, and URL. For each high-match job, add 2&ndash;3 bullet points explaining the match, key requirements, and any red flags. After presenting, ask: &ldquo;Want me to evaluate any of these in detail? Just give me the number(s).&rdquo;</li>
+          <li><em>Handoff</em>: If the user picks a number, invoke the job-application-assistant skill for full evaluation (fit assessment first, then CV + cover letter if approved).</li>
+          <li><em>Update tracker</em>: If the user decides to apply to a job, add a row to <code>job_search_tracker.csv</code>.</li>
+          <li><em>Parallel searches</em>: Use parallel tool calls to speed up the search phase across multiple portals.</li>
+        </ul>
+        <p><strong>Remove</strong>: &ldquo;Step 0&rdquo; through &ldquo;Step 6&rdquo; headings. Remove the &ldquo;How It Works&rdquo; and &ldquo;Invocation&rdquo; sections (the goal statement replaces them). Remove the &ldquo;Important Rules&rdquo; section (constraints are now inline with the phases they govern). Never fabricate job postings &mdash; only present jobs found via actual search results.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Preserve search-queries.md Integration</h3>
+  <ol>
+    <li data-task-id="1.1.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.1.2: Verify search-queries.md is referenced correctly</strong>
+        <data data-files=".opencode/skills/job-scraper/search-queries.md"></data>
+        <p>Ensure the rewritten SKILL.md references <code>search-queries.md</code> as a configurable strategy source (not as a step to execute). The search-queries.md file itself requires no changes &mdash; it is a data file listing query categories, not procedural instruction. Verify the reference path resolves correctly relative to the skill directory.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Verification</h3>
+  <ol>
+    <li data-task-id="1.1.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.1.3: Verify full scrape flow</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Verify the goal-oriented rewrite works end-to-end:</p>
+        <ul>
+          <li>Skill loads via the <code>skill</code> tool (open with &ldquo;find new jobs&rdquo; or &ldquo;scrape for jobs&rdquo;)</li>
+          <li>State files are loaded (<code>seen_jobs.json</code> and <code>job_search_tracker.csv</code>)</li>
+          <li>CLI tools are invoked for search across configured portals</li>
+          <li>Results are deduplicated against seen jobs and tracker</li>
+          <li>Fit ratings are assigned (high/medium/low)</li>
+          <li>Results are presented in the correct table format sorted by fit</li>
+          <li>Handoff to job-application-assistant works when the user picks a job number</li>
+          <li>Parallel searches work (e.g., simultaneous jobindex + jobbank queries)</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Skill file</td><td>Markdown (<code>SKILL.md</code>) &mdash; goal-oriented instruction language</td></tr>
+      <tr><td>CLI job search tools</td><td>TypeScript/Bun (<code>.agents/skills/*/cli/</code>)</td></tr>
+      <tr><td>State management</td><td>JSON (<code>seen_jobs.json</code>)</td></tr>
+      <tr><td>Application tracking</td><td>CSV (<code>job_search_tracker.csv</code>)</td></tr>
+      <tr><td>Search strategy</td><td>Markdown (<code>search-queries.md</code>)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span><code>job-scraper/SKILL.md</code> opens with &ldquo;Your purpose is to&hellip;&rdquo; goal statement</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Zero &ldquo;Step 0&rdquo; through &ldquo;Step 6&rdquo; enumerated headings</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>All domain knowledge preserved: state loading, search strategy, CLI tool usage, pre-filter rule, deduplication logic, fit assessment, output table format, handoff mechanics, tracker update, parallel-search directive</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>&ldquo;Important Rules&rdquo; section removed; constraints are inline with relevant phases</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>search-queries.md</code> referenced as configurable strategy (path resolves correctly)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Skill file is &lt;70 lines</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Scrape &rarr; dedup &rarr; fit-rate &rarr; present &rarr; handoff flow works end-to-end</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v1.0-opencode-migration</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Workflow Migration</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 1: Job Scraper Skill</span>
+</nav>
+
+</article>
+
+</body>
+</html>

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 1: Cookie Injection &amp; Authenticated Boards — Phase 1 — v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.1-obscura-job-search-pipeline" data-phase="1" data-sprint="1" data-status="completed">
+
+<header>
+  <h1>Sprint 1: Cookie Injection &amp; Authenticated Boards</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 1</span>
+    <span>Depends on: Sprint 0</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Extend Obscura with the candidate's real browser session cookies so LinkedIn and Wellfound — the two remaining gated boards — become accessible to the pipeline. Document the cookie export process from Chrome/Firefox. Create a gitignored cookie storage directory. Update the <code>job-scraper</code> SKILL.md with cookie injection workflows, LinkedIn public job search, Wellfound browsing, and cookie expiry handling. At the end of this sprint, "scrape jobs fast --linkedin" returns public job postings from LinkedIn and "scrape jobs fast --wellfound" returns listings from Wellfound.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>Sprint 0's board list covers 80% of target companies via Greenhouse/Ashby/Lever — but it has a structural blind spot. Some high-signal roles are only posted on LinkedIn. Some valuable startups only list on Wellfound. And LinkedIn's public job index, while accessible without login for individual postings, requires authentication for search.</p>
+  <p>Obscura provides <code>browser_set_cookie</code> (set a cookie by name, value, domain) and <code>browser_get_cookies</code> (export all cookies from the jar). This means we don't need to run a full authenticated browser session inside Obscura. Instead, the candidate exports their session cookies once from their real browser (where they're already logged into LinkedIn, Wellfound, etc.), drops the file into a gitignored directory, and the skill injects those cookies before navigating to gated domains.</p>
+  <p>This approach is superior to running a persistent Chrome session because: (1) no browser process to manage, (2) cookies are a static file — no session refresh mid-scrape, (3) the candidate controls exactly which cookies are shared (only session tokens, never passwords), (4) cookies can be refreshed by re-exporting from the real browser when they expire (typically weeks or months for LinkedIn).</p>
+  <p>The key risk is cookie expiry. LinkedIn sessions last ~2 weeks. Wellfound sessions vary. The skill must detect expiry (redirect to login page) and report clearly rather than silently failing with empty results.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Write a <code>export_chrome_cdp.py</code> script using the Chrome DevTools Protocol to extract all cookies (including httpOnly) from a running Chrome instance — no extensions, no Keychain access, no third-party dependencies</li>
+      <li>Document the CDP cookie export workflow: start Chrome with <code>--remote-debugging-port=9222</code>, navigate to the target site, run the script</li>
+      <li>Provide a JavaScript console fallback snippet for non-httpOnly cookies (quick but incomplete — cannot extract <code>li_at</code> for LinkedIn)</li>
+      <li>Create <code>.opencode/skills/job-scraper/cookies/</code> directory with <code>.gitignore</code> (all cookie files are never committed)</li>
+      <li>Define cookie file format: JSON array of <code>{name, value, domain, path, secure, httpOnly}</code> objects</li>
+      <li>Provide a JavaScript console fallback snippet for non-httpOnly cookies (quick but incomplete — cannot extract <code>li_at</code> for LinkedIn)</li>
+      <li>Update SKILL.md State section: load cookie files if they exist; skip gracefully if missing</li>
+      <li>Update SKILL.md Search section: before navigating to a gated domain, inject cookies via <code>browser_set_cookie</code>; navigate to LinkedIn search URL with query parameters; navigate to Wellfound search URL; extract listing URLs from result pages</li>
+      <li>Add cookie expiry detection: after navigation, check if URL redirected to <code>linkedin.com/login</code> or <code>wellfound.com/login</code>; if so, report "cookies expired, re-export from browser" and skip the board</li>
+      <li>Add LinkedIn search queries to <code>search-queries.md</code> Priority 4 section: authenticated LinkedIn search URLs with SF filter and Senior+ level</li>
+      <li>Update run mode triggers: <code>--linkedin</code> and <code>--wellfound</code> flags for targeted authenticated searches</li>
+      <li>Test LinkedIn search and Wellfound search with live cookies</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Automated cookie refresh or session management (user re-exports manually)</li>
+      <li>Password-based login inside Obscura (security risk; cookies only)</li>
+      <li>LinkedIn Easy Apply or form-filling (auto-apply is deferred)</li>
+      <li>Wellfound authenticated profile browsing or messaging</li>
+      <li>Cookie encryption at rest (local machine only; gitignored)</li>
+      <li>Multi-account cookie profiles</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Create Cookie Infrastructure</h3>
+  <ol>
+    <li data-task-id="1.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.1: Create cookies directory and .gitignore</strong>
+        <data data-files=".opencode/skills/job-scraper/cookies/.gitignore, .opencode/skills/job-scraper/cookies/README.md"></data>
+        <p>Create <code>.opencode/skills/job-scraper/cookies/</code> with a <code>.gitignore</code> that ignores all <code>*.json</code> files. Create a <code>README.md</code> with cookie export instructions for Chrome and Firefox.</p>
+      </div>
+    </li>
+    <li data-task-id="1.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.2: Write the CDP cookie extraction script</strong>
+        <data data-files=".opencode/skills/job-scraper/cookies/export_chrome_cdp.py"></data>
+        <p>Write a Python script that exports cookies from a running Chrome instance via the Chrome DevTools Protocol. The script must:</p>
+        <ul>
+          <li>Connect to Chrome's debug endpoint at <code>http://localhost:9222/json</code> to discover open tabs</li>
+          <li>Locate the tab matching the target domain (e.g., linkedin.com) and retrieve its WebSocket debugger URL</li>
+          <li>Send the <code>Network.getCookies</code> CDP command over WebSocket to retrieve all cookies including httpOnly (which <code>document.cookie</code> cannot access)</li>
+          <li>Format the response as a JSON array of <code>{name, value, domain, path, secure, httpOnly}</code> objects</li>
+          <li>Use only Python standard library — no pip dependencies, no browser extensions, no Keychain access</li>
+        </ul>
+        <p><strong>Design decision:</strong> The initial plan specified EditThisCookie and manual DevTools export. This was revised to a CDP script because browser extensions that read all cookies are a security vulnerability. CDP accesses Chrome's own debugging protocol on localhost, which is the intended mechanism for tooling to interact with the browser. The script owns the extraction end-to-end — no third-party code touches the cookies.</p>
+        <p>See also: <a href="cookie-export-cdp-recipe.html">Cookie Export via CDP Recipe</a> for the full implementation rationale and usage guide.</p>
+      </div>
+    </li>
+    <li data-task-id="1.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.3: Document CDP export workflow in README.md</strong>
+        <data data-files=".opencode/skills/job-scraper/cookies/README.md"></data>
+        <p>Document the complete CDP cookie export workflow in <code>cookies/README.md</code>:</p>
+        <ul>
+          <li>How to start Chrome with <code>--remote-debugging-port=9222</code></li>
+          <li>How to run <code>export_chrome_cdp.py</code> for LinkedIn and Wellfound</li>
+          <li>Cookie file format specification</li>
+          <li>Required cookies per site (LinkedIn: <code>li_at</code> + <code>JSESSIONID</code>)</li>
+          <li>Cookie expiry and refresh process</li>
+          <li>JavaScript console snippet as a quick fallback for non-httpOnly cookies</li>
+          <li>Security notes: files are gitignored, no passwords, localhost only</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Update SKILL.md for Cookie-Auth Search</h3>
+  <ol>
+    <li data-task-id="1.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.4: Add cookie state loading to SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Update the State section: after loading the standard config files, check for cookie files in <code>cookies/</code>. If <code>cookies/linkedin.json</code> exists, load it for LinkedIn search. If <code>cookies/wellfound.json</code> exists, load it for Wellfound search. If a cookie file is missing, the corresponding board is skipped (no error).</p>
+      </div>
+    </li>
+    <li data-task-id="1.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.5: Add cookie injection workflow to Search section</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Add cookie-based search strategy to the Search section:</p>
+        <dl>
+          <dt>LinkedIn search (cookie-auth required)</dt>
+          <dd>Load cookies from <code>cookies/linkedin.json</code>. Inject each cookie via <code>browser_set_cookie</code> for domain <code>.linkedin.com</code>. Navigate to LinkedIn job search: <code>https://www.linkedin.com/jobs/search/?keywords=[query]&amp;location=San+Francisco+Bay+Area&amp;f_E=4,5,6</code> (Senior+ level filter). Extract listing URLs and titles from the search result cards. Navigate to each detail page for full description.</dd>
+          <dt>Wellfound search (cookie-auth required)</dt>
+          <dd>Load cookies from <code>cookies/wellfound.json</code>. Inject each cookie via <code>browser_set_cookie</code> for domain <code>.wellfound.com</code>. Navigate to Wellfound search: <code>https://wellfound.com/jobs?search=[query]&amp;location=san-francisco</code>. Use <code>waitUntil: "networkidle0"</code> for dynamic listing loads. Extract listing URLs and titles.</dd>
+        </dl>
+        <p>Cookie-based searches run after the board-list search. They are supplementary — if cookies are missing or expired, the pipeline continues with board-list results only.</p>
+      </div>
+    </li>
+    <li data-task-id="1.6">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.6: Add cookie expiry detection to SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>After navigating to a gated domain, check the resulting URL: if it redirected to a login page (<code>linkedin.com/login</code>, <code>wellfound.com/login</code>, or a <code>/auth</code> path), report "LinkedIn/Wellfound cookies have expired. Re-export from your browser and save to <code>cookies/</code>." Skip the board for this run. Do not crash the pipeline. Add the failure to the Issues section of the output.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Update Search Queries</h3>
+  <ol>
+    <li data-task-id="1.7">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.7: Add authenticated LinkedIn search URLs to search-queries.md</strong>
+        <data data-files=".opencode/skills/job-scraper/search-queries.md"></data>
+        <p>Update Priority 4 (LinkedIn via Google) to include direct LinkedIn search URLs for use with cookie-auth:</p>
+        <pre><code>### Priority 4: LinkedIn (Authenticated Search)
+
+When cookies/linkedin.json is available, use direct LinkedIn search:
+https://www.linkedin.com/jobs/search/?keywords="senior" OR "staff" OR "lead" engineer agentic MCP&location=San+Francisco+Bay+Area&f_E=4,5,6
+https://www.linkedin.com/jobs/search/?keywords="platform engineer" AI agent San Francisco&location=San+Francisco+Bay+Area&f_E=4,5,6
+
+f_E=4,5,6 filters to Senior, Director, and Executive levels only.</code></pre>
+        <p>Keep the existing Google &rarr; LinkedIn fallback queries for when cookies are not available.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Test with Live Cookies</h3>
+  <ol>
+    <li data-task-id="1.8">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.8: Test CDP script with live cookies</strong>
+        <p>Start Chrome with <code>--remote-debugging-port=9222</code>, navigate to linkedin.com, sign in. Run <code>python3 cookies/export_chrome_cdp.py linkedin.com</code>. Verify the output is a valid JSON array containing cookies with all required fields (name, value, domain, path, secure, httpOnly). Confirm the critical <code>li_at</code> cookie (httpOnly) is present — this is the test that CDP passes and the console snippet fails.</p>
+      </div>
+    </li>
+    <li data-task-id="1.9">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.9: Test Wellfound authenticated browsing</strong>
+        <p>With <code>cookies/wellfound.json</code> populated, navigate to a Wellfound search URL. Verify that job listing cards appear (not a login wall). Extract listing URLs and navigate to a detail page.</p>
+      </div>
+    </li>
+    <li data-task-id="1.10">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.10: Test cookie expiry detection</strong>
+        <p>Intentionally use expired or invalid cookies. Verify that the skill detects the login redirect, reports the expiry, and continues with remaining boards without crashing.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Cookie export</td><td>Chrome DevTools Protocol (CDP) via <code>export_chrome_cdp.py</code> (Python stdlib only)</td></tr>
+      <tr><td>Cookie injection</td><td>Obscura MCP <code>browser_set_cookie</code> tool</td></tr>
+      <tr><td>Cookie storage</td><td>JSON files in <code>cookies/</code> (gitignored)</td></tr>
+      <tr><td>Expiry detection</td><td>URL redirect check (login page = expired)</td></tr>
+      <tr><td>LinkedIn search</td><td>Authenticated <code>linkedin.com/jobs/search/</code> with query params</td></tr>
+      <tr><td>Wellfound search</td><td>Authenticated <code>wellfound.com/jobs</code> with query params</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span><code>cookies/</code> directory exists with <code>.gitignore</code> that ignores <code>*.json</code></span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>cookies/README.md</code> documents the CDP export workflow (Chrome debug port, <code>export_chrome_cdp.py</code>, console fallback)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md State section loads cookie files when present, skips gracefully when absent</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md Search section describes cookie injection via <code>browser_set_cookie</code> before gated domain navigation</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md describes LinkedIn authenticated search with query parameters and level filter</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md describes Wellfound authenticated search with dynamic content handling</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Cookie expiry is detected (login redirect) and reported without crashing the pipeline</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>--linkedin</code> and <code>--wellfound</code> flags control cookie-auth search</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>search-queries.md</code> includes direct LinkedIn search URLs with Senior+ filter</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>With valid cookies via CDP export, LinkedIn job search returns posting URLs and titles (not login page)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>With valid cookies, Wellfound job search returns listing cards (not login wall)</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.1-obscura-job-search-pipeline</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Search Coverage Expansion</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 1: Cookie Injection &amp; Authenticated Boards</span>
+</nav>
+
+</article>
+
+</body>
+</html>

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 1: kind Deployment &amp; Persistence — Phase 0 — v1.2-database-driven-persistence</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.2-database-driven-persistence" data-phase="0" data-sprint="1" data-status="completed">
+
+<header>
+  <h1>Sprint 1: kind Deployment &amp; Persistence</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 1</span>
+    <span>Depends on: Sprint 0 (SQLite API Container)</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Deploy the SQLite API container to a local kind cluster with persistent storage. Create the kind cluster config with <code>extraPortMappings</code> for NodePort access and <code>extraMounts</code> to persist the database file on the Mac host filesystem. Write all Kubernetes manifests (Namespace, PersistentVolume, PersistentVolumeClaim, Deployment, Service) and verify the full stack is reachable at <code>localhost:30080</code>.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>kind runs a Kubernetes control plane and worker nodes inside Docker containers. By default, any data stored inside a kind pod is ephemeral — it vanishes when the pod restarts or the cluster is deleted. To persist the SQLite database across restarts, we need a PersistentVolume backed by the Mac host filesystem.</p>
+  <p>The kind <code>extraMounts</code> configuration maps a host directory (<code>./data/</code>) into the kind node container at <code>/kind-host-data</code>. A hostPath PersistentVolume then mounts this path. The Deployment references a PersistentVolumeClaim which binds to this PV. This ensures the <code>job-search.db</code> file lives at <code>./data/job-search.db</code> on the Mac and survives cluster teardown, image rebuilds, and pod restarts.</p>
+  <p>The NodePort service maps port 30080 on the kind node (and thus on the Mac host, via <code>extraPortMappings</code>) to port 8000 inside the pod. This makes the API accessible at <code>http://localhost:30080</code> from any process on the Mac.</p>
+  <p>Existing kind (v0.31.0) and kubectl are installed but no kind clusters are running. Kubectl is currently pointed at a work EKS cluster — the kind config will need to be used with explicit <code>--kubeconfig</code> or the kind context will be switched.</p>
+</section>
+
+<section id="files-to-create">
+  <h2>Files to Create</h2>
+  <table>
+    <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>k8s/kind-config.yaml</code></td><td>Cluster definition: single control-plane node, <code>extraPortMappings</code> for port 30080, <code>extraMounts</code> mapping <code>./data/</code> → <code>/kind-host-data</code></td></tr>
+      <tr><td><code>k8s/namespace.yaml</code></td><td><code>job-search</code> namespace</td></tr>
+      <tr><td><code>k8s/pv.yaml</code></td><td>PersistentVolume: 1Gi, hostPath <code>/kind-host-data/</code>, <code>ReadWriteOnce</code></td></tr>
+      <tr><td><code>k8s/pvc.yaml</code></td><td>PersistentVolumeClaim: 1Gi, binds to the PV, in <code>job-search</code> namespace</td></tr>
+      <tr><td><code>k8s/deployment.yaml</code></td><td>Deployment: 1 replica, image <code>job-search-db:latest</code>, volume mount <code>/data</code>, env <code>DB_PATH=/data/job-search.db</code>, readiness probe on <code>/health</code></td></tr>
+      <tr><td><code>k8s/service.yaml</code></td><td>Service: ClusterIP on port 8000 + NodePort on 30080, selector <code>app: sqlite-api</code></td></tr>
+      <tr><td><code>db/start-cluster.sh</code></td><td>One-command convenience script: creates kind cluster (if needed), loads Docker image into kind, applies all manifests, waits for ready, prints access URL</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Write kind Cluster Config</h3>
+  <ol>
+    <li data-task-id="1.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.1: Write kind-config.yaml</strong>
+        <data data-files="k8s/kind-config.yaml"></data>
+        <pre><code>kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 30080
+    hostPort: 30080
+    protocol: TCP
+  extraMounts:
+  - hostPath: ./data
+    containerPath: /kind-host-data</code></pre>
+        <p>Note: <code>hostPath</code> is relative to the directory where <code>kind create cluster</code> is run. The script will run from the repo root so <code>./data/</code> resolves correctly.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Write Kubernetes Manifests</h3>
+  <ol>
+    <li data-task-id="1.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.2: Write namespace.yaml</strong>
+        <data data-files="k8s/namespace.yaml"></data>
+        <pre><code>apiVersion: v1
+kind: Namespace
+metadata:
+  name: job-search</code></pre>
+      </div>
+    </li>
+    <li data-task-id="1.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.3: Write pv.yaml and pvc.yaml</strong>
+        <data data-files="k8s/pv.yaml, k8s/pvc.yaml"></data>
+        <p>PV: 1Gi, hostPath <code>/kind-host-data</code>, <code>ReadWriteOnce</code>, no storage class (static provisioning). PVC: 1Gi, <code>ReadWriteOnce</code>, binds to the PV by name (<code>volumeName: job-search-db-pv</code>), in <code>job-search</code> namespace.</p>
+      </div>
+    </li>
+    <li data-task-id="1.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.4: Write deployment.yaml</strong>
+        <data data-files="k8s/deployment.yaml"></data>
+        <p>Key specs:</p>
+        <ul>
+          <li>1 replica, <code>app: sqlite-api</code> label</li>
+          <li>Image: <code>job-search-db:latest</code> (loaded into kind via <code>kind load docker-image</code>)</li>
+          <li><code>imagePullPolicy: IfNotPresent</code> (never pull from registry)</li>
+          <li>Volume mount: <code>name: db-storage</code>, <code>mountPath: /data</code></li>
+          <li>Env: <code>DB_PATH=/data/job-search.db</code></li>
+          <li>Readiness probe: <code>httpGet</code> on <code>/health</code> port 8000, initial delay 5s, period 10s</li>
+          <li>Resources: requests 64Mi memory, 100m CPU; limits 256Mi memory, 500m CPU</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="1.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.5: Write service.yaml</strong>
+        <data data-files="k8s/service.yaml"></data>
+        <p>ClusterIP on port 8000 + NodePort on 30080. Selector: <code>app: sqlite-api</code>.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Create Startup Script</h3>
+  <ol>
+    <li data-task-id="1.6">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.6: Write start-cluster.sh</strong>
+        <data data-files="db/start-cluster.sh"></data>
+        <p>Convenience script that:</p>
+        <ol>
+          <li>Checks if kind cluster <code>job-search-local</code> exists; if not, creates it with <code>kind create cluster --config k8s/kind-config.yaml --name job-search-local</code></li>
+          <li>Builds the Docker image: <code>docker build -t job-search-db:latest db/</code></li>
+          <li>Loads the image into kind: <code>kind load docker-image job-search-db:latest --name job-search-local</code></li>
+          <li>Applies all manifests: <code>kubectl apply -f k8s/namespace.yaml -f k8s/pv.yaml -f k8s/pvc.yaml -f k8s/deployment.yaml -f k8s/service.yaml</code></li>
+          <li>Waits for the deployment to be ready: <code>kubectl rollout status deployment/sqlite-api -n job-search --timeout=60s</code></li>
+          <li>Prints: <code>API ready at http://localhost:30080 — verify with: python3 db/client.py health</code></li>
+        </ol>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Deploy and Verify</h3>
+  <ol>
+    <li data-task-id="1.7">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.7: Create kind cluster and apply manifests</strong>
+        <p>Run <code>bash db/start-cluster.sh</code>. Verify output shows all resources created and deployment rolled out.</p>
+      </div>
+    </li>
+    <li data-task-id="1.8">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.8: Verify API is reachable and DB persists</strong>
+        <ul>
+          <li><code>python3 db/client.py health</code> → <code>{"status": "ok"}</code></li>
+          <li><code>python3 db/client.py stats</code> → <code>{"total_jobs": 0}</code> (empty, migration hasn't run yet)</li>
+          <li>Insert a test job: <code>python3 db/client.py jobs insert '{"url":"https://test/j/1","title":"Persistence Test","company":"TestCo","first_seen":"2026-06-09T00:00:00Z","last_updated":"2026-06-09T00:00:00Z","dedup_key":"testco_persistence-test"}'</code></li>
+          <li>Verify: <code>ls -la data/job-search.db</code> shows the file on the Mac host</li>
+          <li>Simulate pod restart: <code>kubectl delete pod -l app=sqlite-api -n job-search</code></li>
+          <li>Wait for new pod: <code>kubectl rollout status deployment/sqlite-api -n job-search</code></li>
+          <li>Verify data survived: <code>python3 db/client.py jobs list</code> still shows the test job</li>
+          <li>Clean up test data: <code>python3 db/client.py jobs update 1 --status skipped</code></li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Cluster orchestration</td><td><a href="https://kind.sigs.k8s.io/">kind</a> v0.31.0</td></tr>
+      <tr><td>Kubernetes API</td><td><code>kubectl</code> (client v1.31+)</td></tr>
+      <tr><td>Container runtime</td><td>Docker (kind nodes are Docker containers)</td></tr>
+      <tr><td>Persistence</td><td>hostPath PV + PVC, mapped via kind <code>extraMounts</code></td></tr>
+      <tr><td>Networking</td><td>kind CNI (default), NodePort service, <code>extraPortMappings</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> <code>kind create cluster --config k8s/kind-config.yaml --name job-search-local</code> succeeds and <code>kind get clusters</code> shows <code>job-search-local</code></li>
+    <li><input type="checkbox"> All k8s manifests apply without errors: namespace, PV, PVC, deployment, service</li>
+    <li><input type="checkbox"> <code>kubectl get pods -n job-search</code> shows <code>sqlite-api</code> pod with status <code>Running</code> and readiness probe passing</li>
+    <li><input type="checkbox"> <code>curl http://localhost:30080/health</code> returns <code>{"status": "ok"}</code></li>
+    <li><input type="checkbox"> <code>python3 db/client.py health</code> works without specifying <code>--api-url</code> (uses default <code>localhost:30080</code>)</li>
+    <li><input type="checkbox"> <code>python3 db/client.py stats</code> returns valid aggregate counts (0 jobs initially)</li>
+    <li><input type="checkbox"> After inserting a job and deleting the pod, the job is still queryable (data persists)</li>
+    <li><input type="checkbox"> <code>ls data/job-search.db</code> shows the SQLite file on the Mac host filesystem</li>
+    <li><input type="checkbox"> <code>bash db/start-cluster.sh</code> is idempotent: running it when the cluster already exists skips creation and just ensures manifests are applied</li>
+    <li><input type="checkbox"> Port 30080 does not conflict with any existing services on the host</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.2-database-driven-persistence</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0: Infrastructure &amp; Data Layer</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 1: kind Deployment &amp; Persistence</span>
+</nav>
+
+</article>
+
+</body>
+</html>

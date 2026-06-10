@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 1 — v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="phase-overview" data-epic="v1.1-obscura-job-search-pipeline" data-phase="1" data-status="planned">
+
+<header>
+  <h1>Phase 1: Search Coverage Expansion</h1>
+  <div class="meta">
+    <span>Epic: v1.1-obscura-job-search-pipeline</span>
+    <span>Phase: 1</span>
+    <span>Depends on: Phase 0 (Pipeline Construction)</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Phase Objective</h2>
+  <p>Fix the search coverage gap exposed by the Phase 0 smoke test: only 1 of 5 search strategies worked (direct Greenhouse navigation). Google (<code>site:</code> queries) was blocked by CAPTCHA. Wellfound returned a login wall. YC Jobs returned noisy/unfiltered results. LinkedIn was unreachable without auth. Build two supplementary search paths — a curated direct board list (no auth, 100% reliable) and cookie-based authentication for gated boards (LinkedIn, Wellfound) — so the pipeline covers all target companies without depending on Google discovery.</p>
+</section>
+
+<section id="sprints">
+  <h2>Sprints</h2>
+
+  <table>
+    <thead>
+      <tr><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="sprint-0-direct-board-list/sprint.html">Sprint 0</a></td>
+        <td>Direct Board List</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 0</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-1-cookie-injection/sprint.html">Sprint 1</a></td>
+        <td>Cookie Injection &amp; Authenticated Boards</td>
+        <td data-status="planned">Planned</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-2-multi-strategy-integration/sprint.html">Sprint 2</a></td>
+        <td>Multi-Strategy Integration &amp; Full Smoke Test</td>
+        <td data-status="planned">Planned</td>
+        <td>Sprint 1</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-3-indeed-integration/sprint.html">Sprint 3</a></td>
+        <td>Indeed Integration</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 2</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../epic-overview.html">v1.1-obscura-job-search-pipeline</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Phase 1: Search Coverage Expansion</span>
+</nav>
+
+</article>
+
+</body>
+</html>

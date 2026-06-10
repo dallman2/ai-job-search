@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 2: Fit Scoring &amp; Evaluation Handoff — Phase 0 — v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.1-obscura-job-search-pipeline" data-phase="0" data-sprint="2" data-status="planned">
+
+<header>
+  <h1>Sprint 2: Fit Scoring &amp; Evaluation Handoff</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 2</span>
+    <span>Depends on: Sprint 1</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Wire the scraper's rapid-scored results into the full <code>job-application-assistant</code> 5-dimension evaluation pipeline. Define the ranked output table format. Implement the numbered-selection handoff: user picks a job number, the LLM loads the extracted job description from <code>seen_jobs.json</code>, invokes the application assistant skill with the full evaluation framework, and presents a scored verdict. Update state on evaluation. At the end of this sprint, the user can go from "scrape jobs fast" to a full fit analysis by typing a single number.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>Sprint 1 produces rapid-scored, deduplicated job listings. Rapid scoring is a keyword-based pre-filter: it catches obvious mismatches before the LLM spends time on detail pages, but it does not replace the full evaluation. The 5-dimension framework in <code>04-job-evaluation.md</code> (Technical Skills, Experience, Behavioral Fit, Location, Career Alignment) requires reading the full job description and reasoning against the complete candidate profile &mdash; a task that needs the application assistant's context (profile data, behavioral profile, writing style rules).</p>
+  <p>The handoff from scraper to evaluator must be seamless. The scraper extracts and stores job descriptions in <code>seen_jobs.json</code>. When the user picks a number, the LLM loads the matching entry from the JSON, invokes the <code>job-application-assistant</code> skill with the description as context, and runs the full evaluation. The result is presented in the standard 5-dimension table format from <code>04-job-evaluation.md</code>.</p>
+  <p>State tracking is critical: after evaluation, the job's status in <code>seen_jobs.json</code> updates from <code>new</code> to <code>evaluated</code>. If the user decides to apply, a row is appended to <code>job_search_tracker.csv</code>. If the user generates a CV and cover letter (via the application assistant's drafting workflow), those files exist at their standard paths (<code>cv/main_&lt;company&gt;.md</code>, <code>cover_letters/cover_&lt;company&gt;_&lt;role&gt;.md</code>).</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Define the ranked output table format with numbered entries, fit badges, and key match signals</li>
+      <li>Implement the numbered-selection handoff from scraper results to full evaluation</li>
+      <li>Load the full job description from <code>seen_jobs.json</code> for the selected entry</li>
+      <li>Invoke <code>job-application-assistant</code> skill with the job description for full 5-dimension evaluation</li>
+      <li>Present evaluation as: scoring table, verdict, key strengths, gaps to address, recommendation</li>
+      <li>After evaluation, prompt: "Want to generate a tailored CV and cover letter?"</li>
+      <li>Update <code>seen_jobs.json</code> status to <code>evaluated</code> after eval</li>
+      <li>If user confirms application: append row to <code>job_search_tracker.csv</code></li>
+      <li>Link generated documents in the output (file paths to CV and cover letter)</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Modifying the <code>job-application-assistant</code> evaluation framework (unchanged from v1.0)</li>
+      <li>Modifying the CV or cover letter drafting workflow (unchanged)</li>
+      <li>Batch evaluation of multiple jobs (one at a time via numbered selection)</li>
+      <li>Auto-applying or form-filling</li>
+      <li>Salary benchmark lookup (tool is optional, unchanged)</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Define Ranked Output Table</h3>
+  <ol>
+    <li data-task-id="2.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.1: Define output table schema in SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Add the following output format specification to the skill's Output section:</p>
+        <pre><code>## Job Search Results -- [date]
+
+| # | Fit | Title | Company | Location | Key Match | 
+|---|-----|-------|---------|----------|------------|
+| 1 | HIGH | Senior SWE, DevProd | Thinking Machines | SF | MCP, K8s, AI tools |
+| 2 | HIGH | Senior SWE | Wispr Flow | SF | Voice AI, TS/React |
+| 3 | MED | Platform Engineer | ExampleCo | Remote | K8s, TypeScript |
+...
+
+6 high matches, 4 medium matches, 12 low matches skipped.
+
+Want me to evaluate any of these in detail? Just give me the number(s).</code></pre>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Implement Evaluation Handoff</h3>
+  <ol>
+    <li data-task-id="2.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.2: Add evaluation handoff logic to SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>When the user provides a number:</p>
+        <ol>
+          <li>Look up the entry in <code>seen_jobs.json</code> by the index from the output table.</li>
+          <li>Load the full job description stored during the fetch phase.</li>
+          <li>Invoke the <code>job-application-assistant</code> skill with the job description and the instruction: "Evaluate this job posting against the candidate profile using the 5-dimension evaluation framework in <code>04-job-evaluation.md</code>. Present the evaluation table, verdict, key strengths, gaps, and recommendation."</li>
+          <li>After evaluation results are returned, update <code>seen_jobs.json</code>: set status to <code>evaluated</code> for that entry.</li>
+          <li>Prompt: "This is a [Strong/Good/Moderate/Weak/Poor] Fit. Want me to generate a tailored CV and cover letter?"</li>
+        </ol>
+      </div>
+    </li>
+    <li data-task-id="2.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.3: Add application tracking logic to SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>If the user says yes to drafting, the <code>job-application-assistant</code> skill handles CV and cover letter generation (its existing workflow, unchanged). After documents are generated, the scraper updates <code>seen_jobs.json</code> status to <code>applied</code> and appends a row to <code>job_search_tracker.csv</code>.</p>
+        <p>CSV row format: <code>company,role,date_applied,status,notes</code>. The <code>date_applied</code> is the current date. <code>status</code> is <code>applied</code>. <code>notes</code> includes links to the generated CV and cover letter file paths.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Update State Management</h3>
+  <ol>
+    <li data-task-id="2.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.4: Document state transitions in SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Define the status lifecycle for jobs in <code>seen_jobs.json</code>:</p>
+        <pre><code>new        &rarr; job found in current scrape, not yet evaluated
+evaluated  &rarr; full 5-dimension evaluation completed
+skipped    &rarr; pre-filtered out (low match, duplicate, expired)
+applied    &rarr; CV + cover letter generated and (presumably) submitted</code></pre>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Skill invocation</td><td><code>skill</code> tool with name <code>job-application-assistant</code></td></tr>
+      <tr><td>Evaluation framework</td><td><code>04-job-evaluation.md</code> (5 dimensions, scoring rubrics, thresholds)</td></tr>
+      <tr><td>State management</td><td><code>seen_jobs.json</code> (status transitions)</td></tr>
+      <tr><td>Application tracking</td><td><code>job_search_tracker.csv</code> (append-only log)</td></tr>
+      <tr><td>Output format</td><td>Markdown table with numbered entries</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span>After a scrape run, output is a numbered table with columns: Fit, Title, Company, Location, Key Match</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>User types "evaluate #2" and the LLM loads job #2's description from <code>seen_jobs.json</code></span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Full evaluation output matches the format in <code>04-job-evaluation.md</code>: scoring table, verdict, strengths, gaps, recommendation</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>After evaluation, <code>seen_jobs.json</code> shows status: <code>evaluated</code> for that entry</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>After evaluation, user is prompted: "Want me to generate a tailored CV and cover letter?"</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>If user confirms generation, <code>job-application-assistant</code> produces CV and cover letter at standard paths</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>After generation, <code>seen_jobs.json</code> status updates to <code>applied</code> and <code>job_search_tracker.csv</code> gets a new row</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Evaluated or applied jobs do not appear in subsequent scrape runs</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.1-obscura-job-search-pipeline</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0: Pipeline Construction</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 2: Fit Scoring &amp; Evaluation Handoff</span>
+</nav>
+
+</article>
+
+</body>
+</html>

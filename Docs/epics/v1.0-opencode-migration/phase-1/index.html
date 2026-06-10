@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 1 — v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="phase-index" data-epic="v1.0-opencode-migration" data-phase="1" data-status="planned">
+
+<header>
+  <h1>Phase 1: Workflow Migration &mdash; Procedural Recipes &rarr; Goal-Oriented Skills</h1>
+  <p>Transform the 3 procedurally-structured skill files into 4 goal-oriented skills. Migrate subagent definitions from standalone <code>.md</code> files into persistent <code>opencode.json</code> subagent definitions. Create the new profile-setup skill.</p>
+</header>
+
+<section>
+  <h2>Sprints</h2>
+  <table>
+    <thead>
+      <tr><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="sprint-0-job-application-skill/sprint.html">Sprint 0</a></td>
+        <td>Job Application Assistant + Subagent Definitions</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 0 Sprint 2</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-1-job-scraper-skill/sprint.html">Sprint 1</a></td>
+        <td>Job Scraper Skill</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 1 Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-2-upskill-skill/sprint.html">Sprint 2</a></td>
+        <td>Upskill Skill</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 1 Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-3-profile-setup-skill/sprint.html">Sprint 3</a></td>
+        <td>Profile Setup &amp; Management Skill</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 1 Sprint 0</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Sprints 1 and 2 are parallelizable once Sprint 0 establishes the goal-oriented writing conventions. Sprint 3 can start as soon as Sprint 0 conventions are locked in.</p>
+</section>
+
+<section>
+  <h2>Phase Goal</h2>
+  <p>By the end of Phase 1, all 4 skills are goal-oriented: each opens with &ldquo;Your purpose is to&hellip;&rdquo; and expresses domain knowledge as constraints rather than enumerated steps. The reviewer and research-expert subagents live exclusively in <code>opencode.json</code> with full persistent system prompts (standalone <code>.opencode/agents/*.md</code> files are deleted). The new profile-setup skill replaces the old <code>/setup</code> and <code>/reset</code> slash commands. Total skill content is ~250 lines across 4 skills.</p>
+  <p>The procedural recipes are gone, but every framework, rule, template, and verification checklist survives &mdash; expressed as <strong>constraints the model reasons about</strong> rather than steps it executes in lockstep.</p>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../index.html">v1.0-opencode-migration</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Phase 1: Workflow Migration</span>
+</nav>
+
+</article>
+
+</body>
+</html>

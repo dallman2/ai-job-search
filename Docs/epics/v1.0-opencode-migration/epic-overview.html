@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Epic Overview: v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="epic-overview" data-epic="v1.0-opencode-migration" data-status="active">
+
+<header>
+  <h1>Epic Overview: v1.0-opencode-migration</h1>
+</header>
+
+<section id="vision">
+  <h2>Epic Vision</h2>
+  <p>Transform the ai-job-search repo from a <strong>Claude Code procedural-recipe architecture</strong> into an <strong>opencode-native, goal-oriented skills architecture</strong>. Remove every model-specific idiom so the system works for any OpenAI-compliant tool-calling model without the model ever needing to know it was built for Claude.</p>
+  <p>The core directive: <strong>content stays, orchestration is rewritten</strong>. Evaluation frameworks, writing rules, LaTeX templates, CLI tools, and profile data are all model-agnostic and remain intact. The 5 procedural command files (~1,100 lines of Claude Code slash commands) are replaced by 4 goal-oriented skills (~280 lines total) plus 2 subagent definitions in <code>opencode.json</code>.</p>
+  <p>Success means a user opens the repo in opencode, says "evaluate this job posting" or "search for jobs in Copenhagen," and the system works &mdash; with the model reasoning dynamically about execution order rather than following a script.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th></tr></thead>
+      <tbody>
+        <tr><td>P0</td><td>Restructure <code>.claude/</code> &rarr; <code>.opencode/</code> directory layout</td></tr>
+        <tr><td>P1</td><td>Rename <code>CLAUDE.md</code> to model-agnostic instruction file</td></tr>
+        <tr><td>P2</td><td>Strip all Claude Code idioms from instruction content (manual context mgmt, <code>$ARGUMENTS</code>, step-rigid language, single-model assumptions)</td></tr>
+        <tr><td>P3</td><td>Create <code>opencode.json</code> with permissions, skill registration, and subagent definitions</td></tr>
+        <tr><td>P4</td><td>Rewrite 5 command files into 4 goal-oriented skills (job-application, job-scraper, upskill, profile-setup)</td></tr>
+        <tr><td>P5</td><td>Define reviewer subagent in <code>opencode.json</code> (persistent, not ad-hoc inline prompt)</td></tr>
+        <tr><td>P6</td><td>Replace <code>WebSearch</code> tool dependency with CLI tools + <code>WebFetch</code></td></tr>
+        <tr><td>P7</td><td>Align all tool name references (Agent&rarr;Task, AskUserQuestion&rarr;Question)</td></tr>
+        <tr><td>P8</td><td>End-to-end testing with real Danish job postings + PDF compilation</td></tr>
+        <tr><td>P9</td><td>Update README and SETUP documentation</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope (Deferred)</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th><th>Rationale</th></tr></thead>
+      <tbody>
+        <tr><td>D0</td><td>Port job search CLI tools to other countries</td><td>Denmark scope is sufficient; CLI tools work as-is</td></tr>
+        <tr><td>D1</td><td>Add new job portals</td><td>Existing 4 portals cover the Danish market</td></tr>
+        <tr><td>D2</td><td>Change LaTeX templates</td><td>Templates are model-agnostic and proven</td></tr>
+        <tr><td>D3</td><td>CI/CD for PDF compilation</td><td>Separate concern; local compilation works</td></tr>
+        <tr><td>D4</td><td>Web UI for job tracking</td><td>Separate epic; spreadsheet tracker works</td></tr>
+        <tr><td>D5</td><td>Port <code>/expand</code> Gemini CLI dependency</td><td>Gemini CLI is not in opencode; replace with WebFetch-based research in future sprint</td></tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+
+<section id="phase-structure">
+  <h2>Phase Structure</h2>
+
+  <table>
+    <thead>
+      <tr><th>Phase</th><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td rowspan="3"><a href="phase-0/">Phase 0</a></td>
+        <td><a href="phase-0/sprint-0-repo-restructuring/sprint.html">Sprint 0</a></td>
+        <td>Repository Restructuring</td>
+        <td data-status="active">Active</td>
+        <td>&mdash;</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-1-idiom-stripping/sprint.html">Sprint 1</a></td>
+        <td>Idiom Stripping</td>
+        <td data-status="active">Active</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-2-opencode-configuration/sprint.html">Sprint 2</a></td>
+        <td>opencode.json Configuration</td>
+        <td data-status="active">Active</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td rowspan="4"><a href="phase-1/">Phase 1</a></td>
+        <td><a href="phase-1/sprint-0-job-application-skill/sprint.html">Sprint 0</a></td>
+        <td>Job Application Assistant Skill</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-1/sprint-1-job-scraper-skill/sprint.html">Sprint 1</a></td>
+        <td>Job Scraper Skill</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-1/sprint-2-upskill-skill/sprint.html">Sprint 2</a></td>
+        <td>Upskill Skill</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-1/sprint-3-profile-setup-skill/sprint.html">Sprint 3</a></td>
+        <td>Profile Setup &amp; Management Skill</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 0</td>
+      </tr>
+      <tr>
+        <td rowspan="4">Phase 2</td>
+        <td>Sprint 0</td>
+        <td>Tool Alignment</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 1</td>
+      </tr>
+      <tr>
+        <td>Sprint 1</td>
+        <td>End-to-End Testing</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 1</td>
+      </tr>
+      <tr>
+        <td>Sprint 2</td>
+        <td>PDF Compilation Chain Hardening</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 1</td>
+      </tr>
+      <tr>
+        <td>Sprint 3</td>
+        <td>Final Audit &amp; Cleanup</td>
+        <td data-status="planned">Planned</td>
+        <td>Phase 2 Sprints 0-2</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="architecture">
+  <h2>Architecture</h2>
+
+  <h3>Before (Claude Code)</h3>
+  <pre><code>CLAUDE.md (system prompt, 128 lines)
+.claude/commands/ (5 procedural recipe books, ~1,100 lines)
+.claude/skills/   (YAML frontmatter with allowed-tools)
+.claude/agents/   (Claude Code agent format, model: sonnet)
+.claude/settings.local.json (permissions)</code></pre>
+
+  <h3>After (opencode-native)</h3>
+  <pre><code>OPENDOC.md (system instructions, model-agnostic, ~100 lines)
+.opencode/skills/ (4 goal-oriented skills, ~280 lines total)
+.opencode/agents/ (opencode agent format)
+opencode.json      (permissions, skill registration, subagent definitions)</code></pre>
+
+  <h3>Key Architectural Transformations</h3>
+  <table>
+    <thead><tr><th>Concern</th><th>Claude Code Pattern</th><th>opencode Pattern</th></tr></thead>
+    <tbody>
+      <tr><td>Workflow execution</td><td>Procedural recipe (Step 0&rarr;1&rarr;2, "exactly in order")</td><td>Goal statement + constraints; model determines path</td></tr>
+      <tr><td>Context management</td><td>Manual ("do not re-read," "hold in context")</td><td>Trust the model; no context directives</td></tr>
+      <tr><td>User input</td><td><code>$ARGUMENTS</code> variable substitution</td><td>Natural conversation extraction</td></tr>
+      <tr><td>Reviewer agent</td><td>60-line inline prompt constructed by main model</td><td>Persistent subagent in <code>opencode.json</code></td></tr>
+      <tr><td>Job search</td><td><code>WebSearch</code> + Google <code>site:</code> queries</td><td>CLI tools (bun/TypeScript) + WebFetch</td></tr>
+      <tr><td>Permissions</td><td><code>allowed-tools</code> in skill YAML frontmatter</td><td><code>opencode.json</code> permissions block</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="conventions">
+  <h2>Conventions</h2>
+  <ol>
+    <li>Skill files are <strong>goal-oriented</strong>: begin with "Your purpose is to..." or "Your goal is," never "Follow these steps exactly in order"</li>
+    <li>Never micromanage context: no "do not re-read," "you already have X," or "hold this in context" directives</li>
+    <li>Subagents are defined in <code>opencode.json</code> with persistent system prompts, never constructed ad-hoc by the main model</li>
+    <li>All tool references use opencode names: <code>Task</code> (not Agent), <code>Question</code> (not AskUserQuestion), <code>WebFetch</code> (not WebSearch)</li>
+    <li>AI tooling references in CVs/cover letters use "opencode" (not "Claude Code")</li>
+    <li>All file paths in <code>data-files</code> attributes are relative to repo root</li>
+    <li>Every sprint plan follows this template: <code>&lt;article data-doc-type="sprint-plan"&gt;</code> with <code>#objective</code>, <code>#rationale</code>, <code>#scope</code> (in/out), <code>#execution-plan</code> (task groups), <code>#tech-stack</code>, <code>#verification</code>, breadcrumb <code>&lt;nav&gt;</code></li>
+    <li>The verification checklist from the original <code>CLAUDE.md</code> (factual accuracy, targeting, consistency, quality, compiled PDF) is preserved &mdash; it is content, not Claude-specific orchestration</li>
+  </ol>
+</section>
+
+<section id="acceptance">
+  <h2>Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> <code>.claude/</code> directory no longer exists</li>
+    <li><input type="checkbox"> Zero occurrences of "follow these steps exactly in order" in any instruction file</li>
+    <li><input type="checkbox"> Zero occurrences of <code>$ARGUMENTS</code> in any instruction file</li>
+    <li><input type="checkbox"> Zero occurrences of <code>allowed-tools</code> in any skill file</li>
+    <li><input type="checkbox"> Zero occurrences of <code>WebSearch</code> in any instruction file</li>
+    <li><input type="checkbox"> Zero occurrences of "Claude" as an actor (not historical reference) in instruction files</li>
+    <li><input type="checkbox"><code>opencode.json</code> is valid and registers all 7 skills + 2 subagents</li>
+    <li><input type="checkbox"> All 4 new skills are goal-oriented (&lt;100 lines each) and dispatch correctly</li>
+    <li><input type="checkbox"> Reviewer subagent is defined in <code>opencode.json</code> (not inline)</li>
+    <li><input type="checkbox"> End-to-end test: URL job posting &rarr; compiled 2-page CV + 1-page cover letter</li>
+    <li><input type="checkbox"> End-to-end test: pasted job description &rarr; compiled PDFs</li>
+    <li><input type="checkbox"> End-to-end test: Danish-language posting &rarr; Danish cover letter</li>
+    <li><input type="checkbox"> README.md updated with opencode instructions</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../index.html">Epics</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">v1.0-opencode-migration</span>
+</nav>
+
+</article>
+
+</body>
+</html>

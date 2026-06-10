@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 0: Scraper Skill Update — Phase 1 — v1.2-database-driven-persistence</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.2-database-driven-persistence" data-phase="1" data-sprint="0" data-status="completed">
+
+<header>
+  <h1>Sprint 0: Scraper Skill Update</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 0</span>
+    <span>Depends on: Phase 0 (Infrastructure &amp; Data Layer), v1.1 Sprint 3 (Indeed Integration)</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Replace all references to <code>seen_jobs.json</code> and <code>job_search_tracker.csv</code> in the scraper skill with <code>db/client.py</code> API calls. Every read, write, update, and dedup check that currently manipulates flat files must go through the database. At the end of this sprint, "scrape jobs fast" stores results in the database, deduplicates against the database, and never touches a JSON file.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>The scraper SKILL.md (<code>.opencode/skills/job-scraper/SKILL.md</code>) has approximately 25 references to <code>seen_jobs.json</code> and <code>job_search_tracker.csv</code> across four major sections: State, Search/Dedup, Evaluation Handoff, and Application Tracking. Each reference needs a corresponding <code>db/client.py</code> command.</p>
+  <p>The changes are mechanical replacements, not architectural rewrites. The scraper's logic (board-list navigation, CDP searches, rapid scoring, dedup, output formatting) remains identical. Only the persistence layer changes. However, the output format must also adapt: job IDs are now database row IDs (integers), not composite dictionary keys.</p>
+  <p>The <code>db/client.py</code> CLI was designed specifically to make these replacements clean: each JSON operation maps to a single subcommand with <code>--flag</code> arguments that read naturally in the skill instructions.</p>
+</section>
+
+<section id="files-to-modify">
+  <h2>Files to Modify</h2>
+  <table>
+    <thead><tr><th>File</th><th>Sections Changed</th><th>Approx. Lines</th></tr></thead>
+    <tbody>
+      <tr><td><code>.opencode/skills/job-scraper/SKILL.md</code></td><td>State, Search, Fetch &amp; Deduplicate, Fit Assessment, Output, Evaluation Handoff, Application Tracking, State Transitions</td><td>~25 replacements across ~40 lines</td></tr>
+      <tr><td><code>.opencode/skills/job-scraper/cdp_search.py</code></td><td>CLI: add <code>--api-url</code> flag for optional direct DB insertion</td><td>~15 lines added</td></tr>
+      <tr><td><code>opencode.json</code></td><td>Add infrastructure prerequisite note</td><td>~3 lines added</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="change-catalog">
+  <h2>Change Catalog: SKILL.md</h2>
+  <p>Every JSON/CSV operation in the scraper skill and its database replacement:</p>
+
+  <table>
+    <thead><tr><th>Section</th><th>Old (JSON/CSV)</th><th>New (DB via client.py)</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>State — load existing jobs</td>
+        <td><code>Load seen_jobs.json (create if missing). Load job_search_tracker.csv.</code></td>
+        <td><code>Verify DB is reachable: python3 db/client.py health. Load summary: python3 db/client.py stats.</code></td>
+      </tr>
+      <tr>
+        <td>State — "new" mode</td>
+        <td><code>Load last_run from seen_jobs.json. Filter entries with first_seen > last_run.</code></td>
+        <td><code>Query: python3 db/client.py scrape-runs list --limit 1 to get last run. Query: python3 db/client.py jobs list --status new (DB handles filtering — or add --since ISO param).</code></td>
+      </tr>
+      <tr>
+        <td>Search — pre-filter check</td>
+        <td><code>Check if company+title in seen_jobs.json (any status) OR in job_search_tracker.csv</code></td>
+        <td><code>python3 db/client.py jobs check --dedup-key "company_title" (returns {"exists": true/false})</code></td>
+      </tr>
+      <tr>
+        <td>Fetch &amp; Dedup — insert new job</td>
+        <td><code>Add to seen dict with title, company, url, first_seen, status, fit_rating, description, source, location, salary</code></td>
+        <td><code>python3 db/client.py jobs insert '{"title":"...", "company":"...", "url":"...", "first_seen":"...", "status":"new", "fit_rating":"high", "description_md":"...", "description_text":"...", "source":"linkedin", "location":"...", "salary":"..."}'</code></td>
+      </tr>
+      <tr>
+        <td>Fetch &amp; Dedup — handle duplicate</td>
+        <td><code>Skip any URL or company+title already in seen dict</code></td>
+        <td><code>If insert returns 409 Conflict, skip (already tracked). Report: "Already tracked: [title] at [company]"</code></td>
+      </tr>
+      <tr>
+        <td>Run tracking — update last_run</td>
+        <td><code>Set last_run in seen_jobs.json. Append run_history entry.</code></td>
+        <td><code>python3 db/client.py scrape-runs log '{"mode":"fast","strategies":["board-list","linkedin"],"companies_checked":18,"jobs_found":23,"jobs_new":8,"strategies_failed":[]}'</code></td>
+      </tr>
+      <tr>
+        <td>Output — filter for presentation</td>
+        <td><code>Filter JSON dict: status=new, fit_rating=high/medium. Build ranked table.</code></td>
+        <td><code>python3 db/client.py jobs list --status new --fit-rating high && python3 db/client.py jobs list --status new --fit-rating medium</code></td>
+      </tr>
+      <tr>
+        <td>Output — "new" mode filter</td>
+        <td><code>Only present jobs with first_seen > last_run</code></td>
+        <td><code>python3 db/client.py jobs list --status new --since "2026-06-08T14:30:00Z"</code></td>
+      </tr>
+      <tr>
+        <td>Evaluation handoff — lookup job</td>
+        <td><code>Look up entry in seen_jobs.json by index from table</code></td>
+        <td><code>python3 db/client.py jobs get &lt;id&gt; — returns full description_md for evaluation</code></td>
+      </tr>
+      <tr>
+        <td>Evaluation handoff — update status</td>
+        <td><code>Set status to "evaluated" in seen dict</code></td>
+        <td><code>python3 db/client.py jobs update &lt;id&gt; --status evaluated</code></td>
+      </tr>
+      <tr>
+        <td>Application tracking — log application</td>
+        <td><code>Append row to CSV: company, role, date_applied, status, notes</code></td>
+        <td><code>python3 db/client.py jobs update &lt;id&gt; --status applied --applied-date "2026-06-09" --notes "CV: applications/anthropic/resume.md"</code></td>
+      </tr>
+      <tr>
+        <td>State transitions — lifecycle</td>
+        <td><code>new → evaluated → applied (in JSON dict + CSV)</code></td>
+        <td><code>Same lifecycle, all in jobs.status column. Queryable via --status flag.</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <ol>
+    <li data-task-id="3.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.1: Add --since parameter to GET /jobs and client.py</strong>
+        <data data-files="db/main.py, db/client.py"></data>
+        <p>The "new" mode filter requires the DB layer to accept a <code>?since=ISO_TIMESTAMP</code> query param that filters <code>first_seen > since</code>. This is needed before the SKILL.md can reference it. Add to both <code>main.py</code> (server) and <code>client.py</code> (CLI).</p>
+      </div>
+    </li>
+    <li data-task-id="3.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.2: Rewrite SKILL.md State section (lines 13–24)</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Replace the first two bullets under "State" with:</p>
+        <ul>
+          <li>Before searching, verify the SQLite API is reachable: <code>python3 db/client.py health</code>. If unreachable, report: "SQLite API not reachable at localhost:30080. Start the kind cluster with: bash db/start-cluster.sh". Abort the scrape.</li>
+          <li>Load current state: <code>python3 db/client.py stats</code> for aggregate counts, <code>python3 db/client.py scrape-runs list --limit 1</code> for last run timestamp (if "new" mode).</li>
+        </ul>
+        <p>Remove references to <code>seen_jobs.json</code> creation (if missing), <code>job_search_tracker.csv</code> loading, and the composite dedup key construction from JSON dict keys.</p>
+      </div>
+    </li>
+    <li data-task-id="3.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.3: Rewrite SKILL.md Search/Dedup/Insert sections (lines 84–88, 140–170)</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Replace pre-filter logic: instead of checking <code>seen_jobs.json</code> dict keys, use:</p>
+        <pre><code>python3 db/client.py jobs check --dedup-key "anthropic_product-engineer"</code></pre>
+        <p>Replace insert logic: instead of the dict assignment (<code>seen[key] = {"title": ..., ...}</code>), use:</p>
+        <pre><code>python3 db/client.py jobs insert '{"title":"...", "company":"Anthropic", ...}'</code></pre>
+        <p>If the command exits with a non-zero status (409 Conflict), the job is a duplicate — skip it.</p>
+        <p>Replace run tracking: instead of <code>seen_jobs.json</code> mutation, use:</p>
+        <pre><code>python3 db/client.py scrape-runs log '{"mode":"fast", ...}'</code></pre>
+      </div>
+    </li>
+    <li data-task-id="3.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.4: Rewrite SKILL.md Output section (lines 180–217)</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Replace the output generation logic:</p>
+        <ul>
+          <li><strong>Summary line:</strong> counts come from <code>python3 db/client.py stats</code> (run after inserting new jobs to get fresh counts)</li>
+          <li><strong>Ranked table:</strong> <code>python3 db/client.py jobs list --status new --fit-rating high --limit 50</code> and <code>python3 db/client.py jobs list --status new --fit-rating medium --limit 50</code></li>
+          <li><strong>Table columns:</strong> <code>| # | Fit | Title | Company | Location | Key Match |</code> — unchanged format, but the <code>#</code> column is now the database <code>id</code> (not an ordinal position in a dict)</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="3.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.5: Rewrite SKILL.md Evaluation Handoff section (lines 219–240)</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Replace the "look up entry in seen_jobs.json" instruction:</p>
+        <ul>
+          <li>User picks a number (the database <code>id</code>)</li>
+          <li>Load the job: <code>python3 db/client.py jobs get &lt;id&gt;</code></li>
+          <li>If <code>description_md</code> is truncated or empty, re-fetch via <code>browser_markdown</code> and update: <code>python3 db/client.py jobs update &lt;id&gt; --description-md "..." --description-text "..."</code></li>
+          <li>After evaluation: <code>python3 db/client.py jobs update &lt;id&gt; --status evaluated --evaluation-score &lt;score&gt;</code></li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="3.6">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.6: Rewrite SKILL.md Application Tracking section (lines 232–251)</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Replace the CSV append:</p>
+        <ul>
+          <li>After user confirms application submission: <code>python3 db/client.py jobs update &lt;id&gt; --status applied --applied-date "YYYY-MM-DD" --notes "CV: applications/company/resume.md, CL: applications/company/cover_letter.md"</code></li>
+          <li>Remove all references to <code>job_search_tracker.csv</code></li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="3.7">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.7: Add --api-url flag to cdp_search.py</strong>
+        <data data-files=".opencode/skills/job-scraper/cdp_search.py"></data>
+        <p>Add an optional <code>--api-url</code> argument that, when provided, causes the script to POST each result to the DB after extraction. If the API is unreachable or returns errors, fall back to stdout JSON output (current behavior). Update the CLI help text to document this flag.</p>
+        <p>This flag applies to <strong>all</strong> subcommands: <code>linkedin</code>, <code>wellfound</code>, and <code>indeed</code> (added in v1.1 Sprint 3). The implementation goes in the shared argument parser or base function, not duplicated per subcommand.</p>
+        <p>This is a convenience feature: the scraper can still collect JSON output and insert separately. The flag just eliminates one round-trip for the AI assistant.</p>
+      </div>
+    </li>
+    <li data-task-id="3.8">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.8: Update opencode.json with infrastructure note</strong>
+        <data data-files="opencode.json"></data>
+        <p>Add to the <code>instructions</code> array or as a comment in OPENDOC.md: "Before scraping jobs, ensure the SQLite API is running: <code>bash db/start-cluster.sh</code>. Verify: <code>python3 db/client.py health</code>."</p>
+        <p>Optionally add a <code>POST /jobs</code> webhook-like pattern to the permission block if needed.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> The word "seen_jobs.json" appears zero times in the scraper SKILL.md</li>
+    <li><input type="checkbox"> The word "job_search_tracker.csv" appears zero times in the scraper SKILL.md</li>
+    <li><input type="checkbox"> All ~25 references are replaced with valid <code>python3 db/client.py</code> commands</li>
+    <li><input type="checkbox"> The SKILL.md still reads as a coherent, goal-oriented instruction document (not a script)</li>
+    <li><input type="checkbox"> The "State" section starts with a health check against the API</li>
+    <li><input type="checkbox"> The "Fetch &amp; Deduplicate" section uses <code>jobs insert</code> and handles 409 responses</li>
+    <li><input type="checkbox"> The "Output" section uses <code>jobs list --status new --fit-rating high</code> for table generation</li>
+    <li><input type="checkbox"> The "Evaluation Handoff" section uses <code>jobs get &lt;id&gt;</code> and <code>jobs update &lt;id&gt;</code></li>
+    <li><input type="checkbox"> The "Application Tracking" section uses <code>jobs update &lt;id&gt; --status applied</code></li>
+    <li><input type="checkbox"> <code>cdp_search.py --api-url</code> optionally posts results directly to the DB</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.2-database-driven-persistence</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Orchestration Cutover &amp; Integration</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 0: Scraper Skill Update</span>
+</nav>
+
+</article>
+
+</body>
+</html>

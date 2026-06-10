@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 2: Upskill Skill — Phase 1 — v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.0-opencode-migration" data-phase="1" data-sprint="2" data-status="planned">
+
+<header>
+  <h1>Sprint 2: Upskill Skill</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 2</span>
+    <span>Depends on: Phase 1 Sprint 0 (conventions)</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Transform <code>upskill/SKILL.md</code> from a Step 1&rarr;2&rarr;3&rarr;4&rarr;5&rarr;6&rarr;7&rarr;8 procedural recipe (239 lines) into a goal-oriented skill (~100 lines). This is the largest transformation in Phase 1. The upskill skill analyzes skill gaps between the candidate&rsquo;s profile and tracked or targeted jobs, then produces a prioritized heatmap, a learning plan with study resources, and a recommended study order.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>The upskill skill is the most procedurally detailed skill in the repo. Its 239 lines describe an 8-step pipeline with precise formulas for skill frequency scoring, fit weighting, gap classification, and report assembly. This level of detail was necessary for a model following a recipe, but in a goal-oriented model, the methodology is <em>domain knowledge</em> the model applies within goal constraints &mdash; not an instruction manual it performs line by line.</p>
+  <p>The transformation must be careful: the two-pass methodology (Pass 1 hard-skill diff with frequency/weight scoring, Pass 2 LLM synthesis for domain/soft/tooling/credential gaps), the heatmap table format, the theme-grouped learning plan structure, and the study order dependency rules are all valuable domain IP. They survive as <strong>methodology constraints</strong>, not procedural steps.</p>
+  <p>The aggregate vs. targeted mode branch (from the old Step 1) becomes a constraint branch the model evaluates against the user&rsquo;s input. The report composition rules (from the old Step 8) become an output format constraint.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Rewrite <code>upskill/SKILL.md</code> into goal-oriented format (target ~100 lines)</li>
+      <li>Remove Step 1&ndash;8 enumeration; express workflow as goal + methodology constraints</li>
+      <li>Preserve two-pass methodology: Pass 1 hard-skill diff (frequency/weight scoring) + Pass 2 LLM synthesis</li>
+      <li>Preserve aggregate vs. targeted mode branching as a constraint</li>
+      <li>Preserve heatmap table format, theme-grouped learning plan structure, and study order dependency rules</li>
+      <li>Merge &ldquo;Important Rules&rdquo; into the constraint body</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Modifying <code>job_search_tracker.csv</code> structure</li>
+      <li>Modifying <code>01-candidate-profile.md</code> (read as input, not modified)</li>
+      <li>Changing the report file naming convention or save location</li>
+      <li>Adding new gap categories or scoring formulas</li>
+      <li>Modifying the output format for heatmaps, learning plans, or study orders</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Rewrite Upskill SKILL.md</h3>
+  <ol>
+    <li data-task-id="1.2.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.2.1: Rewrite SKILL.md as goal-oriented skill</strong>
+        <data data-files=".opencode/skills/upskill/SKILL.md"></data>
+        <p>Transform the 239-line procedural SKILL.md into a goal-oriented format (~100 lines). This is the largest content compression in Phase 1.</p>
+        <p><strong>Goal statement</strong>: &ldquo;Your purpose is to analyze skill gaps between the candidate&rsquo;s profile and tracked or targeted job postings, then produce a prioritized learning plan with study resources and a recommended study order.&rdquo;</p>
+        <p><strong>Mode constraint</strong> (replaces old Step 1 branching logic):</p>
+        <ul>
+          <li>If the user provides a URL or pasted job text, operate in <strong>targeted mode</strong>: analyze only that posting. Do not load the tracker.</li>
+          <li>If the user provides no URL, operate in <strong>aggregate mode</strong>: load <code>job_search_tracker.csv</code> and analyze all jobs.</li>
+        </ul>
+        <p><strong>Methodology constraints</strong> (preserved from Steps 2&ndash;7, but expressed as rules, not ordered instructions):</p>
+        <ul>
+          <li><em>Data loading (aggregate mode)</em>: Read <code>job_search_tracker.csv</code> (columns: date, company, sector, role, role_type, channel, status, contact_person, fit_rating, notes, cv_file, cover_letter_file, source). Read <code>.opencode/skills/job-application-assistant/01-candidate-profile.md</code> for current skills. Check <code>upskill/</code> for the most recent aggregate report to enable the &ldquo;Since Last Report&rdquo; diff in the output.</li>
+          <li><em>Data loading (targeted mode)</em>: Use WebFetch to retrieve the posting. Extract job title, company, required/preferred skills, responsibilities, and domain context. Read the candidate profile for current skills. No tracker data.</li>
+          <li><em>Pass 1: Hard Skill Diff</em>: Extract required and preferred technical skills from each job source. In aggregate mode, build a skill frequency map where each skill&rsquo;s score = <code>sum of ((100 - fit_rating) / 100)</code> across all jobs &mdash; lower fit jobs contribute more weight to the gap score. In targeted mode, list required skills before preferred skills. Against the profile, be generous with matching: if the profile mentions a skill in any form (e.g., &ldquo;Python&rdquo; covers &ldquo;Python scripting&rdquo;), remove it from the gap list.</li>
+          <li><em>Pass 2: LLM Synthesis</em>: Reason holistically about gaps the hard-skill diff misses. Consider domain knowledge, soft skills, tooling/process, and credential/certification gaps. Tag each as <code>[domain]</code>, <code>[soft]</code>, <code>[tooling]</code>, or <code>[credential]</code>. Do not duplicate Pass 1 gaps.</li>
+          <li><em>Heatmap</em>: Combine Pass 1 and Pass 2 into a prioritized table. Assign Critical (high-frequency/weight, or domain gaps across most jobs), High (moderate scores or consistent soft/tooling gaps), Medium (lower-frequency hard skills), and Low (one-off mentions). Always print the heatmap in the terminal as intermediate output before proceeding to the learning plan.</li>
+          <li><em>Learning plan</em>: For every Critical and High gap (and Medium if fewer than 5 total gaps), produce a learning entry: 2&ndash;3 study resources found via WebFetch, a study direction tailored to the candidate&rsquo;s existing background (be specific about what to skip), and a realistic time estimate. Group entries under theme headings (e.g., Cloud &amp; Infrastructure, Domain Knowledge).</li>
+          <li><em>Study order</em>: Number topics in recommended sequence. Dependencies first (&ldquo;AWS networking&rdquo; requires &ldquo;AWS fundamentals&rdquo;), Critical before High before Medium, quick wins early if fast (~5h), domain knowledge last. Include a total estimated time.</li>
+          <li><em>Report assembly</em>: Assemble in order: header (mode + date), Since Last Report (aggregate only, omit if first report), Gap Heatmap, Learning Plan, Study Order. Save to <code>upskill/report-YYYY-MM-DD.md</code> (aggregate) or <code>upskill/report-YYYY-MM-DD-&lt;company&gt;-&lt;role&gt;.md</code> (targeted).</li>
+        </ul>
+        <p><strong>Resource search rules</strong> (preserved from old &ldquo;Important Rules&rdquo;):</p>
+        <ul>
+          <li>Never fabricate resources. Only cite resources found via actual WebFetch searches.</li>
+          <li>Include the current year in resource searches so results stay fresh.</li>
+          <li>Prefer hands-on courses over lecture-only content. Prefer official docs for tooling gaps. Prefer books for domain knowledge.</li>
+          <li>Omit Low-priority gaps from the learning plan (list them in the heatmap only).</li>
+          <li>Always save the report via Write. Do not skip even if the user seems satisfied with terminal output.</li>
+        </ul>
+        <p><strong>Remove</strong>: &ldquo;Step 1&rdquo; through &ldquo;Step 8&rdquo; headings. Remove the &ldquo;Overview&rdquo; and &ldquo;Invocation&rdquo; sections (the goal statement replaces them). Remove the &ldquo;Important Rules&rdquo; section (rules are now inline). Remove the old detailed report template (the constraints describe the output format sufficiently).</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Preserve Output Format Specifications</h3>
+  <ol>
+    <li data-task-id="1.2.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.2.2: Verify output format constraints are complete</strong>
+        <data data-files=".opencode/skills/upskill/SKILL.md"></data>
+        <p>Ensure the rewritten SKILL.md preserves all three output format specifications as constraints:</p>
+        <ul>
+          <li><strong>Heatmap table</strong>: Priority | Skill / Area | Type | Gap Source (with frequency/score attribution)</li>
+          <li><strong>Theme-grouped learning entries</strong>: Heading, skill name with type tag, estimated hours, 2&ndash;3 resources with URLs and one-line rationale, tailored study direction</li>
+          <li><strong>Study order table</strong>: Numbered sequence with Topic, Type, Estimated Time, and Dependency Note columns; total estimated time</li>
+        </ul>
+        <p>The old SKILL.md includes full example entries in code blocks. These example blocks are excessive as constraints (&ldquo;the model will generate them by following the constraint, not by copying an example&rdquo;). Shorten or remove example blocks; the format description itself is sufficient.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Verification</h3>
+  <ol>
+    <li data-task-id="1.2.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.2.3: Verify both modes work end-to-end</strong>
+        <data data-files=".opencode/skills/upskill/SKILL.md"></data>
+        <p>Verify the goal-oriented rewrite works in both modes:</p>
+        <ul>
+          <li>Skill loads via the <code>skill</code> tool (open with &ldquo;what should I learn&rdquo; or &ldquo;analyze skill gaps&rdquo;)</li>
+          <li><strong>Aggregate mode</strong>: loads tracker, builds frequency map with fit weighting, runs Pass 1 + Pass 2, prints heatmap, builds learning plan with resource search, writes study order, saves report</li>
+          <li><strong>Targeted mode</strong>: WebFetch fetches the URL, extracts skills, runs Pass 1 + Pass 2, prints heatmap, builds learning plan, writes study order, saves report with slugified filename</li>
+          <li>&ldquo;Since Last Report&rdquo; diff works in aggregate mode (gaps closed, new gaps identified)</li>
+          <li>Report is always saved to <code>upskill/</code> with correct filename convention</li>
+          <li>Pass 1 skill frequency scoring is correct (lower fit = higher weight)</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Skill file</td><td>Markdown (<code>SKILL.md</code>) &mdash; goal-oriented instruction language</td></tr>
+      <tr><td>Job data source</td><td>CSV (<code>job_search_tracker.csv</code>)</td></tr>
+      <tr><td>Candidate profile</td><td>Markdown (<code>01-candidate-profile.md</code>)</td></tr>
+      <tr><td>Resource search</td><td>WebFetch (courses, docs, books)</td></tr>
+      <tr><td>Report output</td><td>Markdown saved to <code>upskill/</code> directory</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span><code>upskill/SKILL.md</code> opens with &ldquo;Your purpose is to&hellip;&rdquo; goal statement</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Zero &ldquo;Step 1&rdquo; through &ldquo;Step 8&rdquo; enumerated headings</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Two-pass methodology preserved: Pass 1 hard-skill diff (frequency/weight scoring) + Pass 2 LLM synthesis (domain/soft/tooling/credential)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Aggregate vs. targeted mode branching preserved as constraint (not procedural fork)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Heatmap, learning plan, and study order output formats preserved</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>&ldquo;Important Rules&rdquo; section removed; anti-fabrication and resource search rules inline</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Skill file is ~100 lines (down from 239)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Aggregate mode: tracker &rarr; heatmap &rarr; learning plan &rarr; report saved</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Targeted mode: URL &rarr; heatmap &rarr; learning plan &rarr; report saved with slugged filename</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v1.0-opencode-migration</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Workflow Migration</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 2: Upskill Skill</span>
+</nav>
+
+</article>
+
+</body>
+</html>

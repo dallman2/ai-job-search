@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Epic Overview: v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="epic-overview" data-epic="v1.1-obscura-job-search-pipeline" data-status="planned">
+
+<header>
+  <h1>Epic Overview: v1.1-obscura-job-search-pipeline</h1>
+</header>
+
+<section id="vision">
+  <h2>Epic Vision</h2>
+  <p>Replace the manual job-posting copy/paste loop with an <strong>autonomous Obscura-powered search pipeline</strong>. The LLM can browse job boards directly via a headless browser MCP server, extract job descriptions from JS-rendered pages that <code>WebFetch</code> cannot reach, run those descriptions through the existing 5-dimension evaluation framework, and present scored results without the user needing to touch a browser.</p>
+  <p>The core directive: <strong>the LLM becomes the user's proxy on the web</strong>. It navigates Greenhouse, Ashby, Wellfound, and Y Combinator job boards, applies the search queries from <code>search-queries.md</code>, deduplicates against previously seen jobs, rapid-scores candidates, and hands off high-fit matches to the full job-application-assistant evaluation-and-drafting workflow. The user's role shifts from operator to decision maker.</p>
+  <p>Success means the user types "scrape jobs fast" in opencode and receives a ranked table of new job postings with fit scores, each backed by a full extracted description that the LLM read and evaluated from the live board.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th></tr></thead>
+      <tbody>
+        <tr><td>O1</td><td>Install <a href="https://github.com/h4ckf0r0day/obscura">Obscura</a> via Docker and register it as a remote MCP server in <code>opencode.json</code></td></tr>
+        <tr><td>O2</td><td>Smoke-test Obscura MCP tools (<code>browser_navigate</code>, <code>browser_snapshot</code>, <code>browser_evaluate</code>) on all 4 target job boards</td></tr>
+        <tr><td>O3</td><td>Rewrite <code>job-scraper</code> SKILL.md: replace Danish portal references with SF-targeted Obscura workflow</td></tr>
+        <tr><td>O4</td><td>Create <code>job_scraper/seen_jobs.json</code> and <code>job_search_tracker.csv</code> for dedup and application tracking</td></tr>
+        <tr><td>O5</td><td>Document board-specific extraction patterns: Greenhouse, Ashby, Wellfound, YC Jobs, Google&rarr;LinkedIn</td></tr>
+        <tr><td>O6</td><td>Implement rapid fit scoring (High/Medium/Low) and ranked output table</td></tr>
+        <tr><td>O7</td><td>Hook ranked results into full <code>job-application-assistant</code> 5-dimension evaluation</td></tr>
+        <tr><td>O8</td><td>Support "scrape jobs fast" (priority 1-3) and "scrape jobs deep" (all 5 priority tiers)</td></tr>
+        <tr><td>O9</td><td>Support "scrape jobs new" (diff against last run timestamp)</td></tr>
+        <tr><td>O10</td><td>Error resilience: individual board failures do not kill the batch; timeouts retry once then skip</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope (Deferred)</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th><th>Rationale</th></tr></thead>
+      <tbody>
+        <tr><td>D0</td><td>Web UI for job feed</td><td>Separate epic; CLI output suffices for v1.1</td></tr>
+        <tr><td>D1</td><td>LinkedIn authenticated search</td><td>Requires session management; Google&rarr;LinkedIn public posts covers 70%</td></tr>
+        <tr><td>D2</td><td>Auto-apply to jobs</td><td>Separate epic; requires form-filling, file upload, and human review gate</td></tr>
+        <tr><td>D3</td><td>Scheduled/cron scraping</td><td>On-demand runs are sufficient; GitHub Actions cron is future work</td></tr>
+        <tr><td>D4</td><td>Proxy rotation</td><td>Obscura stealth mode (3,520 tracker domains blocked, fingerprint randomization) handles anti-bot for v1.1</td></tr>
+        <tr><td>D5</td><td>Residential proxy integration</td><td>Not needed unless boards start blocking; Obscura sponsors offer proxy integration as add-on</td></tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+
+<section id="architecture">
+  <h2>Architecture</h2>
+
+  <h3>Before (Manual Copy/Paste)</h3>
+  <pre><code>User finds job posting on LinkedIn/Greenhouse
+     &darr;
+User copy/pastes URL into opencode chat
+     &darr;
+LLM calls WebFetch (often fails on JS pages)
+     &darr;
+User saves HTML file manually (postings/ dir)
+     &darr;
+LLM reads saved file, evaluates, drafts</code></pre>
+
+  <h3>After (Obscura Autonomous Pipeline)</h3>
+  <pre><code>User: "scrape jobs fast"
+     &darr;
+job-scraper skill executes search queries against boards
+     &darr;
+Obscura MCP tools navigate + extract job descriptions
+     &darr;
+Rapid fit scoring + deduplication
+     &darr;
+Ranked table output: "6 high matches found"
+     &darr;
+User: "evaluate #2"
+     &darr;
+job-application-assistant runs full 5-dimension eval
+     &darr;
+User: "draft CV and cover letter"</code></pre>
+
+  <h3>Component Architecture</h3>
+  <pre><code>opencode.json
+  &boxvr;&boxh; mcp.obscura (type: "remote", url: "http://127.0.0.1:8080/mcp")
+  &boxur;&boxh; subagents: reviewer, research-expert
+
+Docker: h4ckf0r0day/obscura
+  &boxvr;&boxh; cmd: mcp --http --port 8080 --host 0.0.0.0 --stealth
+  &boxvr;&boxh; 30 MB memory, 85 ms page loads
+  &boxvr;&boxh; Stealth: anti-fingerprint + 3,520 tracker domains blocked
+  &boxur;&boxh; Binary: Rust, distroless/cc base, 57 MB compressed
+
+job-scraper skill
+  &boxvr;&boxh; SKILL.md (rewritten for SF AI context)
+  &boxvr;&boxh; search-queries.md (5 priority tiers)
+  &boxvr;&boxh; seen_jobs.json (deduplication)
+  &boxur;&boxh; job_search_tracker.csv (application log)
+
+Target Boards
+  &boxvr;&boxh; greenhouse.io (public job boards)
+  &boxvr;&boxh; jobs.ashbyhq.com (public job boards)
+  &boxvr;&boxh; wellfound.com (early-stage startups)
+  &boxvr;&boxh; ycombinator.com/jobs (YC companies)
+  &boxvr;&boxh; indeed.com (largest US job board, CDP-driven)
+  &boxur;&boxh; Google &rarr; LinkedIn public postings + direct career pages</code></pre>
+
+  <h3>Key Design Decisions</h3>
+  <table>
+    <thead><tr><th>Decision</th><th>Rationale</th></tr></thead>
+    <tbody>
+      <tr><td>Docker, not binary in repo</td><td>57 MB compressed image. <code>distroless/cc</code> base has no shell attack surface. <code>docker run</code> is a one-liner.</td></tr>
+      <tr><td>MCP HTTP mode (<code>type: "remote"</code>)</td><td>opencode connects via HTTP. No binary on PATH. No stdio subprocess management.</td></tr>
+      <tr><td>Stealth always on</td><td>Randomized fingerprint per session. 3,520 tracker domains preemptively blocked. Prevents board bans before they happen.</td></tr>
+      <tr><td>LinkedIn via Google</td><td>LinkedIn job search requires auth. Google indexes public postings. Career pages (OpenAI, Anthropic) caught by Google queries.</td></tr>
+      <tr><td>Indefinite seen_jobs</td><td>JSON stores only URLs + timestamps (not descriptions). Trivially small. Easy to prune later.</td></tr>
+      <tr><td>"fast" (top 3) vs "deep" (all 5)</td><td>User controls breadth/time tradeoff. Top 3 priority tiers cover agentic, dev-tooling, and frontier lab queries.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="phase-structure">
+  <h2>Phase Structure</h2>
+
+  <table>
+    <thead>
+      <tr><th>Phase</th><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td rowspan="4"><a href="phase-0/">Phase 0</a></td>
+        <td><a href="phase-0/sprint-0-obscura-docker-mcp/sprint.html">Sprint 0</a></td>
+        <td>Obscura Docker &amp; MCP Registration</td>
+        <td data-status="completed">Completed</td>
+        <td>&mdash;</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-1-scraper-skill-rewrite/sprint.html">Sprint 1</a></td>
+        <td>Scraper Skill Rewrite</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-2-fit-evaluation-handoff/sprint.html">Sprint 2</a></td>
+        <td>Fit Scoring &amp; Evaluation Handoff</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 1</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-3-pipeline-automation/sprint.html">Sprint 3</a></td>
+        <td>Pipeline Automation &amp; Polish</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 2</td>
+      </tr>
+      <tr>
+        <td rowspan="4"><a href="phase-1/">Phase 1</a></td>
+        <td><a href="phase-1/sprint-0-direct-board-list/sprint.html">Sprint 0</a></td>
+        <td>Direct Board List</td>
+        <td data-status="completed">Completed</td>
+        <td>Phase 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-1/sprint-1-cookie-injection/sprint.html">Sprint 1</a></td>
+        <td>Cookie Injection &amp; Authenticated Boards</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-1/sprint-2-multi-strategy-integration/sprint.html">Sprint 2</a></td>
+        <td>Multi-Strategy Integration &amp; Smoke Test</td>
+        <td data-status="planned">Planned</td>
+        <td>Sprint 1</td>
+      </tr>
+      <tr>
+        <td><a href="phase-1/sprint-3-indeed-integration/sprint.html">Sprint 3</a></td>
+        <td>Indeed Integration</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 2</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="conventions">
+  <h2>Conventions</h2>
+  <ol>
+    <li>All skill files are goal-oriented: begin with "Your purpose is to..."</li>
+    <li>MCP server registration follows the opencode remote MCP pattern: <code>"type": "remote"</code> with <code>"url"</code></li>
+    <li>Obscura MCP tools are used directly by the LLM; no wrapper scripts or CLI abstractions between the model and the browser</li>
+    <li>Job descriptions are extracted as markdown via <code>browser_snapshot</code> and stored in <code>seen_jobs.json</code> for the evaluation phase</li>
+    <li>Dedup keys: URL (primary) or normalized company+title (fallback for URL variants)</li>
+    <li>All sprint plans follow the same HTML template as v1.0-opencode-migration</li>
+    <li>The Docker container name is <code>obscura</code>; it runs in MCP HTTP mode, not the default CDP serve mode</li>
+    <li>AI tooling references in generated CVs/cover letters continue to reference "opencode" by name (v1.0 convention, unchanged)</li>
+  </ol>
+</section>
+
+<section id="acceptance">
+  <h2>Epic Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> <code>docker ps</code> shows <code>obscura</code> container running in MCP HTTP mode</li>
+    <li><input type="checkbox"> <code>opencode.json</code> registers <code>obscura</code> as remote MCP server with <code>enabled: true</code></li>
+    <li><input type="checkbox"> LLM can navigate to a Greenhouse job posting and extract the full job description as markdown</li>
+    <li><input type="checkbox"> LLM can navigate to an Ashby job posting and extract the full job description as markdown</li>
+    <li><input type="checkbox"> LLM can search Wellfound and extract job listing results</li>
+    <li><input type="checkbox"> LLM can search Y Combinator jobs and extract listing results</li>
+    <li><input type="checkbox"> "scrape jobs fast" runs priority 1-3 queries across all configured boards</li>
+    <li><input type="checkbox"> "scrape jobs deep" runs all 5 priority tiers</li>
+    <li><input type="checkbox"> Output is a ranked, deduplicated table with fit scores (High/Medium/Low)</li>
+    <li><input type="checkbox"> Picking a numbered result triggers full 5-dimension evaluation via job-application-assistant</li>
+    <li><input type="checkbox"> Jobs already in <code>seen_jobs.json</code> or <code>job_search_tracker.csv</code> are not re-presented</li>
+    <li><input type="checkbox"> A single board failure does not crash the batch; remaining boards continue</li>
+    <li><input type="checkbox"> "scrape jobs new" returns only jobs posted since the last run timestamp</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../index.html">Epics</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">v1.1-obscura-job-search-pipeline</span>
+</nav>
+
+</article>
+
+</body>
+</html>

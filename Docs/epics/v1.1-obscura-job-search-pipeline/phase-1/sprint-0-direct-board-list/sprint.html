@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 0: Direct Board List — Phase 1 — v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.1-obscura-job-search-pipeline" data-phase="1" data-sprint="0" data-status="completed">
+
+<header>
+  <h1>Sprint 0: Direct Board List</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 0</span>
+    <span>Depends on: Phase 0</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Build a reliable, no-auth-required search path that covers 80% of target companies by replacing Google discovery with a curated list of company career pages organized by ATS platform. Create <code>board-list.md</code> with 30-50 target companies and their board URLs. Update the <code>job-scraper</code> SKILL.md to load and iterate the board list during the search phase. At the end of this sprint, "scrape jobs fast" returns jobs from 5+ distinct companies across multiple board platforms without touching Google at all.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>The Phase 0 smoke test revealed that 4 of 5 search strategies fail: Google <code>site:</code> queries hit CAPTCHA blocks, Wellfound requires login, YC Jobs SF filter returns globally-scattered results, and LinkedIn is unreachable without authentication. Only direct Greenhouse/Ashby/Lever board navigation worked reliably. This is actually good news: the vast majority of target companies (frontier AI labs, AI-native infrastructure startups, devtools companies) host jobs on Greenhouse, Ashby, or Lever — all of which expose public job boards with no authentication required.</p>
+  <p>The current search strategy uses Google <code>site:</code> queries to discover which companies are hiring, then navigates to individual postings. This is the wrong order. We already know which companies we want to work for. The board list inverts the approach: start with a known-good list of company career pages, navigate directly to each, extract current listings, and score them. No discovery step needed.</p>
+  <p>This is the highest-impact, lowest-risk change in Phase 1. No new infrastructure. No cookies to manage. Just a well-researched list and a small skill update.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Research and compile 30-50 target company career pages organized by ATS platform</li>
+      <li>Coverage targets: frontier AI labs, AI-native infrastructure/devtools startups, agentic/MCP companies, voice/multimodal AI companies</li>
+      <li>Each entry: company name, board URL, board type (Greenhouse/Ashby/Lever/custom), role filter tags, notes</li>
+      <li>Create <code>.opencode/skills/job-scraper/board-list.md</code> with the curated list</li>
+      <li>Update SKILL.md State section: load <code>board-list.md</code> alongside existing config files</li>
+      <li>Update SKILL.md Search section: add board-list iteration as a search strategy; navigate to each board URL, extract listing titles and URLs, collect across all boards before moving to deduplication</li>
+      <li>Update run mode triggers: "board-list" flag runs board-list only (fastest, most reliable path); "fast" defaults to board-list when available</li>
+      <li>Test against live boards: verify listing extraction works on Greenhouse, Ashby, and Lever boards</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Cookie injection or authenticated board access (Sprint 1)</li>
+      <li>Google <code>site:</code> query fixes (superseded by board list)</li>
+      <li>LinkedIn or Wellfound search (Sprint 1)</li>
+      <li>Multi-strategy orchestration (Sprint 2)</li>
+      <li>Modifying search-queries.md (still used as fallback; Google queries remain for future auth-based recovery)</li>
+      <li>Web scraping laws or rate-limit concerns (public job boards are intended for browsing)</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Research and Compile Board List</h3>
+  <ol>
+    <li data-task-id="0.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.1: Research frontier AI lab career pages</strong>
+        <data data-files=".opencode/skills/job-scraper/board-list.md"></data>
+        <p>Identify the job board platform for each frontier AI lab and collect their public career page URL:</p>
+        <ul>
+          <li>Anthropic — Greenhouse (<code>job-boards.greenhouse.io/anthropic</code>)</li>
+          <li>OpenAI — Ashby (<code>jobs.ashbyhq.com/openai</code>)</li>
+          <li>xAI — Lever (<code>jobs.lever.co/xai</code>)</li>
+          <li>Mistral — Ashby (<code>jobs.ashbyhq.com/mistral</code>)</li>
+          <li>DeepMind — Google Careers (custom; <code>deepmind.google/careers</code>)</li>
+          <li>Additional: Cohere, Adept, Together AI, Nous Research, Replit, Cursor/Anysphere</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="0.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.2: Research AI-native infrastructure/devtools company pages</strong>
+        <p>Identify career pages for companies building agentic frameworks, MCP tooling, inference optimization, and AI developer platforms:</p>
+        <ul>
+          <li>LangChain — Greenhouse</li>
+          <li>Modal — Ashby</li>
+          <li>Weights &amp; Biases — Greenhouse</li>
+          <li>Hugging Face — Greenhouse</li>
+          <li>Vercel (AI SDK team) — Greenhouse</li>
+          <li>Cloudflare (Workers AI) — Greenhouse</li>
+          <li>CodeRabbit, Sourcegraph, Tabnine, Augment, Poolside — various platforms</li>
+          <li>Additional: Fixie, AgentOps, Braintrust, Galileo, Helicone, LangSmith</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="0.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.3: Research voice/multimodal and additional AI companies</strong>
+        <p>Identify career pages for voice AI, multimodal, and other AI companies in SF:</p>
+        <ul>
+          <li>ElevenLabs — Ashby</li>
+          <li>AssemblyAI — Greenhouse</li>
+          <li>Deepgram — Greenhouse</li>
+          <li>Runway — Greenhouse</li>
+          <li>Pika Labs — Greenhouse</li>
+          <li>Descript — Greenhouse</li>
+          <li>Additional: Midjourney, Stability AI, Leonardo AI</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Create board-list.md</h3>
+  <ol>
+    <li data-task-id="0.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.4: Write board-list.md with structured entries</strong>
+        <data data-files=".opencode/skills/job-scraper/board-list.md"></data>
+        <p>Create <code>.opencode/skills/job-scraper/board-list.md</code>. Format:</p>
+        <pre><code># Direct Board List
+
+## Frontier AI Labs
+- **Anthropic** — [Greenhouse](https://job-boards.greenhouse.io/anthropic) — SF/NY/Sea/London
+- **OpenAI** — [Ashby](https://jobs.ashbyhq.com/openai) — SF/NY
+- ...
+
+## AI-Native Infrastructure & DevTools
+- **LangChain** — [Greenhouse](https://job-boards.greenhouse.io/langchain) — SF/NY
+- ...
+
+## Voice & Multimodal AI
+- **ElevenLabs** — [Ashby](https://jobs.ashbyhq.com/elevenlabs) — SF/Remote
+- ...</code></pre>
+        <p>Organize by category. Include location notes for pre-filtering. Mark companies with open-source MCP/agentic products with an <code>[agentic]</code> tag for prioritization.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Update SKILL.md</h3>
+  <ol>
+    <li data-task-id="0.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.5: Add board-list state loading to SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Update the State section: add <code>board-list.md</code> to the files loaded during initialization. The board list provides direct URLs to company career pages, bypassing Google discovery entirely.</p>
+      </div>
+    </li>
+    <li data-task-id="0.6">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.6: Add board-list iteration to Search phase</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Add board-list search strategy to the Search section:</p>
+        <dl>
+          <dt>Board-list search (primary, no-auth)</dt>
+          <dd>For each company in <code>board-list.md</code>, navigate to the board URL via <code>browser_navigate</code>. Extract listing titles and URLs from the job board page. Collect all listing URLs before moving to the Fetch phase. Parallel navigation where the board supports it. Pre-filter by location (SF/Remote) and level (Senior+) from listing snippets.</dd>
+        </dl>
+        <p>Board-list search runs first — it's the fastest and most reliable path. Other search strategies (search-queries, cookie-auth) supplement it.</p>
+      </div>
+    </li>
+    <li data-task-id="0.7">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.7: Update run mode triggers for board-list</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Add board-list mode detection: if the user says "board-list" or the default "fast" mode is triggered and <code>board-list.md</code> exists, run board-list search as the primary strategy. Board-list search is compatible with fast/deep/new modes. "fast" with board-list runs the first 15-20 companies (prioritized by category). "deep" runs the entire list.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Smoke Test</h3>
+  <ol>
+    <li data-task-id="0.8">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.8: Test board-list extraction on 5+ companies</strong>
+        <p>Navigate to the board URLs for Anthropic, OpenAI, LangChain, ElevenLabs, and one additional company. Verify that listing titles and URLs can be extracted from each board page. Verify that detail pages load correctly when navigated to from the listing URLs.</p>
+      </div>
+    </li>
+    <li data-task-id="0.9">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.9: Confirm diversity of results</strong>
+        <p>Run a fast board-list scrape. Verify that results come from at least 3 distinct companies across at least 2 different ATS platforms (Greenhouse + Ashby + Lever). This confirms the board list solves the "only Anthropic" problem.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Board list</td><td>Markdown file (<code>board-list.md</code>) organized by company category</td></tr>
+      <tr><td>Navigation</td><td>Obscura MCP tools (<code>browser_navigate</code>, <code>browser_snapshot</code>, <code>browser_evaluate</code>)</td></tr>
+      <tr><td>Extraction</td><td>Documented per-platform patterns in SKILL.md (Greenhouse, Ashby, Lever, custom)</td></tr>
+      <tr><td>Skill definition</td><td>SKILL.md (goal-oriented, no step-by-step prescriptions)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span><code>board-list.md</code> exists with 30+ companies across 4+ categories</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Each entry includes: company name, board URL, board type, location notes</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md State section references <code>board-list.md</code> as a loaded config file</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md Search section describes board-list iteration as a search strategy</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md recognizes "board-list" flag and integrates with existing run modes</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>"scrape jobs fast" with board-list returns jobs from 3+ distinct companies</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Results come from at least 2 different ATS platforms (Greenhouse + Ashby/Lever)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Board-list search does not touch Google at all — zero <code>site:</code> queries</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Pre-filtering by location (SF/Remote) and level (Senior+) works from listing snippets</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.1-obscura-job-search-pipeline</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Search Coverage Expansion</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 0: Direct Board List</span>
+</nav>
+
+</article>
+
+</body>
+</html>

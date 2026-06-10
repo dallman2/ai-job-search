@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Risk Registry — v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="risk-registry" data-epic="v1.0-opencode-migration" data-status="active">
+
+<header>
+  <h1>Risk Registry &mdash; v1.0-opencode-migration</h1>
+</header>
+
+<section id="risks">
+  <h2>Active Risks</h2>
+
+  <table>
+    <thead>
+      <tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>opencode skill loading behaves differently from Claude Code skill loading; directory paths or naming conventions differ</td>
+        <td>Medium</td>
+        <td>Skills won't load; system appears empty. High impact if discovered late.</td>
+        <td>Study caroline repo's <code>.opencode/skills/</code> for working patterns. Test skill loading immediately in Sprint 0.2.</td>
+      </tr>
+      <tr>
+        <td>Reviewer subagent definition format in <code>opencode.json</code> is incompatible or unclear</td>
+        <td>Medium</td>
+        <td>Reviewer subagent cannot be dispatched; workflow degrades to single-pass drafting without critique.</td>
+        <td>Verify subagent schema against opencode docs and caroline's agent configs before Sprint 1.4. Keep the inline prompt as a fallback pattern.</td>
+      </tr>
+      <tr>
+        <td>Model (non-Claude) doesn't follow goal-oriented instructions well; performs better with procedural structure</td>
+        <td>Low</td>
+        <td>Skills produce incomplete or wrong output because the model misjudges execution order.</td>
+        <td>Test with simple workflow first. If models struggle, add light structural guidance (suggested sequence, not "exactly in order"). The profile files themselves are procedural enough to fall back on.</td>
+      </tr>
+      <tr>
+        <td>CLI job search tools need updated bun dependencies or fail under opencode's Bash tool</td>
+        <td>Low</td>
+        <td>Job search functionality is broken.</td>
+        <td>Install and test <code>bun install</code> in all 4 CLI directories in Sprint 0.0. The tools are plain TypeScript; Bash execution is OS-level and tool-agnostic.</td>
+      </tr>
+      <tr>
+        <td>Profile files retain stale <code>.claude/skills/</code> path references after directory move</td>
+        <td>Medium</td>
+        <td>Skills reference non-existent files; model tries to read missing paths.</td>
+        <td>Grep-and-replace all <code>.claude/</code> path references in Sprint 0.0 Task 0.10. Verify in Sprint 0.0 verification checklist.</td>
+      </tr>
+      <tr>
+        <td>LaTeX compilation hard-codes paths that break after directory restructuring</td>
+        <td>Low</td>
+        <td>PDF compilation fails because font paths or template includes are wrong.</td>
+        <td>LaTeX templates reference <code>cover_letters/OpenFonts/</code> which is unchanged. The <code>cv/</code> and <code>cover_letters/</code> directories are not moving.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="questions">
+  <h2>Open Questions</h2>
+
+  <table>
+    <thead>
+      <tr><th>Question</th><th>Decision Point</th><th>Likely Answer</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Should <code>OPENDOC.md</code> be the main instruction file name, or should instructions live in <code>.opencode/instructions/</code>?</td>
+        <td>Sprint 0.0 (before renaming)</td>
+        <td>Both: <code>OPENDOC.md</code> as the human-readable profile document; <code>.opencode/instructions/</code> for system instructions loaded by opencode. The two serve different purposes.</td>
+      </tr>
+      <tr>
+        <td>Should the existing <code>.agents/skills/</code> job portal skills stay there or move to <code>.opencode/skills/</code>?</td>
+        <td>Sprint 0.0</td>
+        <td>Stay in <code>.agents/skills/</code>. opencode already recognizes them there (they appear in available_skills). Moving them risks breaking the existing compatibility.</td>
+      </tr>
+      <tr>
+        <td>Does opencode support the <code>context: fork</code> directive from Claude Code skill files?</td>
+        <td>Sprint 0.1 (when stripping idioms)</td>
+        <td>Probably not. Remove it. The fork context is a Claude Code feature for sandboxing skill execution; opencode may handle this differently or not at all.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="tech-debt">
+  <h2>Known Technical Debt</h2>
+  <ul>
+    <li><strong>Gemini CLI dependency in <code>/expand</code>:</strong> <code>.claude/agents/gemini-research-expert.md</code> references a <code>gemini</code> CLI tool that may not exist in opencode. Deferred to epic backlog (D5). The research subagent should use WebFetch instead.</li>
+    <li><strong><code>salary_lookup.py</code> hard-codes <code>salary_data.json</code> path:</strong> Not a migration concern, but noted. The tool works as-is.</li>
+    <li><strong><code>job_search_tracker.csv</code> column names hard-coded in multiple places:</strong> The upskill and scraper skills both reference column names. If the CSV schema changes, both break. Not migration-blocking.</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="epic-overview.html">v1.0-opencode-migration</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Risk Registry</span>
+</nav>
+
+</article>
+
+</body>
+</html>

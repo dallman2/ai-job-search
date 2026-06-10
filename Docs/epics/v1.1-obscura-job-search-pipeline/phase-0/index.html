@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 0 — v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="phase-overview" data-epic="v1.1-obscura-job-search-pipeline" data-phase="0" data-status="planned">
+
+<header>
+  <h1>Phase 0: Pipeline Construction</h1>
+  <div class="meta">
+    <span>Epic: v1.1-obscura-job-search-pipeline</span>
+    <span>Phase: 0</span>
+    <span>Depends on: v1.0-opencode-migration Phase 1</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Phase Objective</h2>
+  <p>Stand up the Obscura-powered job search pipeline end-to-end. Start with the Docker container and MCP registration, then rewrite the scraper skill to use Obscura, add the evaluation handoff, and wire everything together with error handling. All 4 sprints are sequential; each depends on the one before it.</p>
+</section>
+
+<section id="sprints">
+  <h2>Sprints</h2>
+
+  <table>
+    <thead>
+      <tr><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="sprint-0-obscura-docker-mcp/sprint.html">Sprint 0</a></td>
+        <td>Obscura Docker &amp; MCP Registration</td>
+        <td data-status="planned">Planned</td>
+        <td>&mdash;</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-1-scraper-skill-rewrite/sprint.html">Sprint 1</a></td>
+        <td>Scraper Skill Rewrite</td>
+        <td data-status="planned">Planned</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-2-fit-evaluation-handoff/sprint.html">Sprint 2</a></td>
+        <td>Fit Scoring &amp; Evaluation Handoff</td>
+        <td data-status="planned">Planned</td>
+        <td>Sprint 1</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-3-pipeline-automation/sprint.html">Sprint 3</a></td>
+        <td>Pipeline Automation &amp; Polish</td>
+        <td data-status="planned">Planned</td>
+        <td>Sprint 2</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../epic-overview.html">v1.1-obscura-job-search-pipeline</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Phase 0: Pipeline Construction</span>
+</nav>
+
+</article>
+
+</body>
+</html>

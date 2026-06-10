@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 0: Repository Restructuring — Phase 0 — v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.0-opencode-migration" data-phase="0" data-sprint="0" data-status="completed">
+
+<header>
+  <h1>Sprint 0: Repository Restructuring</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 0</span>
+    <span>Depends on: &mdash;</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Physically reorganize the directory structure from Claude Code conventions to opencode conventions. Rename <code>CLAUDE.md</code>. Move <code>.claude/skills/</code> and <code>.claude/agents/</code> into <code>.opencode/</code>. Delete <code>.claude/commands/</code> and <code>.claude/settings.local.json</code>. Update all internal path references. <strong>Zero logic changes.</strong></p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>opencode uses <code>.opencode/</code> for skills, agents, and instructions. <code>.claude/</code> is a Claude Code convention that opencode ignores. The existing <code>.agents/skills/</code> job portal CLI tools are already compatible with opencode (they appear in the available_skills list) and stay in place. The <code>CLAUDE.md</code> file name is Claude-branded and should be renamed.</p>
+  <p>This sprint is deliberately zero-logic-change: only <code>mv</code>, <code>rm</code>, <code>mkdir</code>, and path-reference updates. Any content modification is deferred to Sprint 1. This makes rollback trivial and isolates content changes from structural changes.</p>
+  <p>Before touching any file, the entire sprint must be validated against caroline's <code>.opencode/</code> directory structure to ensure opencode compatibility.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Create <code>.opencode/</code> directory with <code>skills/</code> and <code>agents/</code> subdirectories</li>
+      <li>Move <code>.claude/skills/job-application-assistant/</code> &rarr; <code>.opencode/skills/job-application-assistant/</code> (7 files)</li>
+      <li>Move <code>.claude/skills/job-scraper/</code> &rarr; <code>.opencode/skills/job-scraper/</code> (2 files)</li>
+      <li>Move <code>.claude/skills/upskill/</code> &rarr; <code>.opencode/skills/upskill/</code> (1 file)</li>
+      <li>Move <code>.claude/agents/gemini-research-expert.md</code> &rarr; <code>.opencode/agents/gemini-research-expert.md</code></li>
+      <li>Rename <code>CLAUDE.md</code> &rarr; <code>OPENDOC.md</code></li>
+      <li>Delete <code>.claude/commands/</code> (4 markdown files: apply.md, setup.md, expand.md, reset.md)</li>
+      <li>Delete <code>.claude/settings.local.json</code></li>
+      <li>Delete empty <code>.claude/</code> directory</li>
+      <li>Update all relative path references in skill files from <code>.claude/skills/</code> &rarr; <code>.opencode/skills/</code></li>
+      <li>Update all relative path references in CLI skill files for <code>bun run</code> commands if affected</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Modifying any file content beyond path-reference updates</li>
+      <li>Moving or modifying <code>.agents/skills/</code> (already opencode-compatible)</li>
+      <li>Creating <code>opencode.json</code> (Sprint 2)</li>
+      <li>Updating README.md or SETUP.md (Phase 2 Sprint 3)</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Validation: Study opencode Conventions</h3>
+  <ol>
+    <li data-task-id="0.1">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.1: Verify opencode directory conventions against caroline</strong>
+        <data data-files=".opencode/ .agents/"></data>
+        <p>Read caroline's <code>.opencode/</code> directory structure. Confirm: (a) skills live in <code>.opencode/skills/&lt;name&gt;/SKILL.md</code>, (b) agents live in <code>.opencode/agents/</code>, (c) opencode recognizes <code>.agents/skills/</code> as a valid skill location. Document any differences from the proposed structure before making changes.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Create Target Directory Structure</h3>
+  <ol>
+    <li data-task-id="0.2">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.2: Create .opencode/ directory tree</strong>
+        <data data-files=".opencode/skills/ .opencode/agents/"></data>
+        <p><code>mkdir -p .opencode/skills .opencode/agents</code>. Verify creation.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Move Skill Files</h3>
+  <ol>
+    <li data-task-id="0.3">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.3: Move job-application-assistant skill</strong>
+        <data data-files=".opencode/skills/job-application-assistant/"></data>
+        <p><code>mv .claude/skills/job-application-assistant .opencode/skills/job-application-assistant</code>. 7 files: SKILL.md, 01-candidate-profile.md through 07-interview-prep.md.</p>
+      </div>
+    </li>
+    <li data-task-id="0.4">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.4: Move job-scraper skill</strong>
+        <data data-files=".opencode/skills/job-scraper/"></data>
+        <p><code>mv .claude/skills/job-scraper .opencode/skills/job-scraper</code>. 2 files: SKILL.md, search-queries.md.</p>
+      </div>
+    </li>
+    <li data-task-id="0.5">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.5: Move upskill skill</strong>
+        <data data-files=".opencode/skills/upskill/"></data>
+        <p><code>mv .claude/skills/upskill .opencode/skills/upskill</code>. 1 file: SKILL.md.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Move Agent File</h3>
+  <ol>
+    <li data-task-id="0.6">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.6: Move research expert agent</strong>
+        <data data-files=".opencode/agents/gemini-research-expert.md"></data>
+        <p><code>mv .claude/agents/gemini-research-expert.md .opencode/agents/gemini-research-expert.md</code>. Note: this file will be rewritten in Phase 1 to remove Claude Code format.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>5. Rename Main Instruction File</h3>
+  <ol>
+    <li data-task-id="0.7">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.7: Rename CLAUDE.md to OPENDOC.md</strong>
+        <data data-files="OPENDOC.md"></data>
+        <p><code>mv CLAUDE.md OPENDOC.md</code>. Content unchanged at this stage. The file retains the full candidate profile template and workflow rules; stripping happens in Sprint 1.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>6. Delete Claude Code Artifacts</h3>
+  <ol>
+    <li data-task-id="0.8">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.8: Delete commands directory</strong>
+        <p><code>rm -rf .claude/commands</code>. Removes apply.md, setup.md, expand.md, reset.md. These 4 files (~1,100 lines) will be re-expressed as opencode skills in Phase 1.</p>
+      </div>
+    </li>
+    <li data-task-id="0.9">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.9: Delete settings file and empty .claude/</strong>
+        <p><code>rm .claude/settings.local.json</code> then <code>rmdir .claude</code>. If <code>.claude/</code> still contains files, investigate before force-deleting.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>7. Update Internal Path References</h3>
+  <ol>
+    <li data-task-id="0.10">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.10: Update .claude/ path references in skill files</strong>
+        <data data-files=".opencode/skills/ .agents/skills/"></data>
+        <p>Grep for <code>.claude/skills/</code> across all moved skill files and CLI skill files. Replace with <code>.opencode/skills/</code>. Files likely affected: SKILL.md files that reference profile files (e.g., "Read <code>.claude/skills/job-application-assistant/01-candidate-profile.md</code>" &rarr; "<code>.opencode/skills/job-application-assistant/01-candidate-profile.md</code>"). Also check OPENDOC.md for path references to the repo structure section.</p>
+      </div>
+    </li>
+    <li data-task-id="0.11">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 0.11: Verify bun run paths in CLI skills still resolve</strong>
+        <data data-files=".agents/skills/jobindex-search/SKILL.md .agents/skills/jobbank-search/SKILL.md .agents/skills/jobnet-search/SKILL.md .agents/skills/jobdanmark-search/SKILL.md"></data>
+        <p>CLI skills reference paths like <code>skills/jobindex-search/cli/src/cli.ts</code>. Since these skills live in <code>.agents/skills/</code>, the <code>bun run</code> commands use paths relative to repo root (e.g., <code>bun run .agents/skills/jobindex-search/cli/src/cli.ts search</code>). Verify these paths still resolve after the move of sibling directories. They should be unaffected since <code>.agents/</code> didn't move, but confirm.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>File operations</td><td>Bash (<code>mv</code>, <code>rm</code>, <code>mkdir</code>)</td></tr>
+      <tr><td>Path reference updates</td><td>Edit tool (targeted string replacement) or <code>sed</code></td></tr>
+      <tr><td>Verification</td><td><code>ls</code>, <code>rg</code>, <code>git diff</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>ls .claude/</code> returns "No such file or directory"</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>ls .opencode/skills/</code> shows <code>job-application-assistant/</code>, <code>job-scraper/</code>, <code>upskill/</code></span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>ls .opencode/agents/</code> shows <code>gemini-research-expert.md</code></span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>ls OPENDOC.md</code> exists (renamed from CLAUDE.md)</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>ls CLAUDE.md</code> returns "No such file or directory"</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>rg "\.claude/skills/" .opencode/ .agents/ OPENDOC.md</code> returns zero matches (path references updated)</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>rg "\.claude/commands/"</code> returns zero matches anywhere in repo</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>rg "\.claude/settings"</code> returns zero matches anywhere in repo</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>git status</code> shows renames (R) and deletes (D), no unexpected modifications</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>All moved skill files are byte-identical to originals (except path-reference updates in Task 0.10)</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>.agents/skills/</code> directory is untouched (all 4 CLI tools intact)</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v1.0-opencode-migration</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0: Foundation</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 0: Repository Restructuring</span>
+</nav>
+
+</article>
+
+</body>
+</html>

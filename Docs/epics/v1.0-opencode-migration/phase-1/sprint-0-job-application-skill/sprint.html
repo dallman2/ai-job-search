@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 0: Job Application Assistant + Subagent Definitions — Phase 1 — v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.0-opencode-migration" data-phase="1" data-sprint="0" data-status="planned">
+
+<header>
+  <h1>Sprint 0: Job Application Assistant + Subagent Definitions</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 0</span>
+    <span>Depends on: Phase 0 (all sprints complete)</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Transform <code>job-application-assistant/SKILL.md</code> from a Step 1&rarr;2&rarr;3&rarr;4 procedural recipe into a goal-oriented skill. In parallel, migrate the reviewer and research-expert subagent system prompts from standalone <code>.opencode/agents/*.md</code> files into <code>opencode.json</code> as persistent subagent definitions with full prompts (not stubs). Delete the standalone agent files afterward. This sprint establishes the goal-oriented writing conventions that Sprints 1&ndash;3 follow.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>The job-application-assistant is the centerpiece of the repo &mdash; it coordinates the full apply workflow: evaluate fit, tailor CV, write cover letter, compile and verify PDFs, prepare interview materials. The current SKILL.md (62 lines post-Phase 0) retains the procedural structure even though Claude idiomatic language was stripped in Sprint 1. Its &ldquo;Step 1: Research &amp; Evaluate,&rdquo; &ldquo;Step 2: Tailor CV,&rdquo; &ldquo;Step 3: Write Cover Letter,&rdquo; &ldquo;Step 4: Interview Prep&rdquo; headings must become goal statements.</p>
+  <p>The reviewer subagent is tightly coupled to this skill &mdash; it critiques drafts the drafter produces. Under Claude Code, the review prompt was a 60-line inline prompt constructed ad-hoc by the main model. opencode supports <em>persistent subagents</em> defined in <code>opencode.json</code>, which means the reviewer system prompt exists as configuration, not as generated text. The same applies to the research-expert subagent used for company and technology research.</p>
+  <p>Sprint 2 of Phase 0 created subagent <em>stubs</em> with placeholder prompts. This sprint fills in the full system prompts by migrating the content from <code>.opencode/agents/reviewer.md</code> (63 lines) and <code>.opencode/agents/research-expert.md</code> (49 lines) into <code>opencode.json</code>.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Rewrite <code>job-application-assistant/SKILL.md</code> into goal-oriented format (target &lt;80 lines)</li>
+      <li>Migrate reviewer subagent system prompt from <code>.opencode/agents/reviewer.md</code> into <code>opencode.json</code></li>
+      <li>Migrate research-expert subagent system prompt from <code>.opencode/agents/research-expert.md</code> into <code>opencode.json</code></li>
+      <li>Delete standalone agent files <code>.opencode/agents/reviewer.md</code> and <code>.opencode/agents/research-expert.md</code></li>
+      <li>Convert quick-command shortcuts (evaluate-only, CV-only, cover-letter-only, interview-prep-only) into goal variants expressed as constraints</li>
+      <li>Establish goal-oriented skill writing conventions for use in Sprints 1&ndash;3</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Modifying the 7 profile files in <code>job-application-assistant/</code> (01&ndash;07) &mdash; they are data/framework files, not procedural recipes</li>
+      <li>Modifying the verification checklist (lives in <code>OPENDOC.md</code> and is referenced as a constraint)</li>
+      <li>Changing LaTeX templates, cover letter class, or document structure</li>
+      <li>Modifying the drafter-reviewer pattern semantics (the two-agent pattern stays; only its expression changes)</li>
+      <li>End-to-end testing of the full apply flow (Phase 2)</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Rewrite Job Application Assistant SKILL.md</h3>
+  <ol>
+    <li data-task-id="1.0.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.0.1: Rewrite SKILL.md as goal-oriented skill</strong>
+        <data data-files=".opencode/skills/job-application-assistant/SKILL.md"></data>
+        <p>Transform the 62-line procedural SKILL.md into a goal-oriented format (&lt;80 lines). The opening sentence becomes the goal statement; everything else becomes domain constraints.</p>
+        <p><strong>Goal statement</strong>: &ldquo;Your purpose is to assist the candidate with evaluating job postings and producing tailored, verified application materials.&rdquo;</p>
+        <p><strong>Domain constraints to preserve</strong> (expressed as rules, not ordered steps):</p>
+        <ul>
+          <li>Always evaluate fit first using the 5-dimension scoring framework in <code>04-job-evaluation.md</code> before drafting. Present the evaluation table and verdict to the user; ask whether to proceed.</li>
+          <li>When drafting a CV, read the most relevant existing CV variant from <code>cv/</code> as a starting point. Follow the tailoring rules in <code>05-cv-templates.md</code>. Adjust profile statement, skills emphasis, experience bullet ordering, and section order to target the specific role.</li>
+          <li>When writing a cover letter, apply the style rules in <code>03-writing-style.md</code> (no em-dashes, no cliches, active voice). Follow the template structure in <code>06-cover-letter-templates.md</code>. Connect specific experience points to the role&rsquo;s requirements.</li>
+          <li>After drafting, dispatch the reviewer subagent for critique. Read the reviewer&rsquo;s Part A (structured edits) and Part B (narrative suggestions). Revise drafts incorporating feedback.</li>
+          <li>Compile and visually inspect both PDFs: CV with <code>lualatex</code> (exactly 2 pages, no orphaned <code>\cventry</code> titles), cover letter with <code>xelatex</code> (exactly 1 page, signature block must fit). Iterate until both pass.</li>
+          <li>Run the verification checklist from <code>OPENDOC.md</code> (factual accuracy, targeting, consistency, quality, compiled PDF) before presenting to the user. Report results as pass/fail.</li>
+          <li>When preparing interview materials, follow the framework in <code>07-interview-prep.md</code>.</li>
+          <li>Never fabricate skills, experience, or achievements. All claims must match the candidate profile.</li>
+          <li>For AI tooling references in CVs/cover letters, use &ldquo;opencode.&rdquo;</li>
+        </ul>
+        <p><strong>Goal variants</strong> (partial workflows expressed as constraint branches):</p>
+        <ul>
+          <li>User wants evaluation only: stop after presenting the fit assessment and recommendation.</li>
+          <li>User wants CV only: skip cover letter and interview prep.</li>
+          <li>User wants cover letter only: skip CV and interview prep; use the most recent CV for context.</li>
+          <li>User wants interview prep only: skip document drafting; use the posting and profile directly.</li>
+        </ul>
+        <p><strong>Remove</strong>: &ldquo;Step 1,&rdquo; &ldquo;Step 2,&rdquo; &ldquo;Step 3,&rdquo; &ldquo;Step 4&rdquo; headings. Remove the &ldquo;Quick Commands&rdquo; section (replaced by goal variants above). Remove the reference files table (the constraints reference files by name naturally).</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Migrate Subagent Definitions into opencode.json</h3>
+  <ol>
+    <li data-task-id="1.0.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.0.2: Register reviewer subagent with full system prompt</strong>
+        <data data-files="opencode.json"></data>
+        <p>If Sprint 2 created a reviewer stub, replace the stub prompt with the full system prompt from <code>.opencode/agents/reviewer.md</code>. If the stub was not created, add the reviewer subagent definition. The prompt content is already goal-oriented (&ldquo;You are a hiring manager proxy reviewing a job application. Your purpose is to&hellip;&rdquo;) and needs minimal editing &mdash; primarily removing Claude Code-isms if any remain (check for &ldquo;Claude,&rdquo; &ldquo;Agent,&rdquo; &ldquo;AskUserQuestion&rdquo;).</p>
+        <p><strong>Key elements to preserve</strong>:</p>
+        <ul>
+          <li>Four-phase task structure: Research the Company, Read Reference Materials, Review the Drafts, Produce Feedback in Two Parts</li>
+          <li>Part A / Part B feedback format (structured edits as JSON + narrative suggestions)</li>
+          <li>Tool permissions: read-only (Read, WebFetch) with Edit/Write/Bash denied</li>
+          <li>Critical rules: ground suggestions in profile data, never fabricate, flag genuine gaps honestly, do not run verification checklist</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="1.0.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.0.3: Register research-expert subagent with full system prompt</strong>
+        <data data-files="opencode.json"></data>
+        <p>If Sprint 2 created a research-expert stub, replace the stub prompt. If not, add the definition. Migrate the full prompt from <code>.opencode/agents/research-expert.md</code>. The prompt is already goal-oriented and needs only a check for Claude-specific idioms.</p>
+        <p><strong>Key elements to preserve</strong>:</p>
+        <ul>
+          <li>Research methodology: Inquiry Formulation, Research Execution, Information Synthesis, Quality Assurance</li>
+          <li>Research categories: Company Research, Technology Research, Learning Resources</li>
+          <li>Communication style directives: proactive, systematic, critical, efficient, transparent</li>
+          <li>Tool permissions: Read and WebFetch only (no Write/Bash)</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="1.0.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.0.4: Delete standalone agent files</strong>
+        <data data-files=".opencode/agents/reviewer.md, .opencode/agents/research-expert.md"></data>
+        <p>Once the full prompts are migrated into <code>opencode.json</code> and validated, delete <code>.opencode/agents/reviewer.md</code> and <code>.opencode/agents/research-expert.md</code>. The subagents now live exclusively in <code>opencode.json</code> as persistent, centrally-managed definitions. If the <code>.opencode/agents/</code> directory becomes empty, remove it.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Verification</h3>
+  <ol>
+    <li data-task-id="1.0.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.0.5: Verify skill loading and subagent dispatch</strong>
+        <data data-files="opencode.json, .opencode/skills/job-application-assistant/SKILL.md"></data>
+        <p>Verify the goal-oriented rewrite works end-to-end:</p>
+        <ul>
+          <li>Skill loads correctly via the <code>skill</code> tool (open with &ldquo;evaluate this job posting&rdquo; or &ldquo;apply to this URL&rdquo;)</li>
+          <li>Reviewer subagent dispatches via <code>Task</code> and returns structured Part A + Part B feedback</li>
+          <li>Research-expert subagent dispatches via <code>Task</code> and returns organized company research</li>
+          <li>Goal variants work: evaluation-only stops before drafting; CV-only skips cover letter; cover-letter-only skips CV; interview-prep-only skips documents</li>
+          <li>Full apply flow completes: URL &rarr; evaluation &rarr; draft CV + cover letter &rarr; reviewer critique &rarr; revise &rarr; compile PDFs &rarr; pass verification checklist</li>
+          <li><code>opencode.json</code> remains syntactically valid after subagent definitions are added</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Skill file</td><td>Markdown (<code>SKILL.md</code>) &mdash; goal-oriented instruction language</td></tr>
+      <tr><td>Subagent definitions</td><td>JSON in <code>opencode.json</code> &mdash; persistent system prompts</td></tr>
+      <tr><td>Reviewer dispatch</td><td><code>Task</code> tool (opencode subagent dispatch)</td></tr>
+      <tr><td>CV compilation</td><td><code>lualatex</code> (moderncv template)</td></tr>
+      <tr><td>Cover letter compilation</td><td><code>xelatex</code> (custom cover.cls with fontspec)</td></tr>
+      <tr><td>Company research</td><td><code>WebFetch</code> (website, news, reviews)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span><code>job-application-assistant/SKILL.md</code> opens with &ldquo;Your purpose is to&hellip;&rdquo; goal statement</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Zero &ldquo;Step 1,&rdquo; &ldquo;Step 2&rdquo; step-enumeration headings in the skill file</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>All domain knowledge preserved: fit evaluation framework reference, CV/cover letter template rules, LaTeX compilation rules, verification checklist reference, anti-fabrication rule</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>&ldquo;Quick Commands&rdquo; section replaced by goal-variant constraint branches</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Reviewer subagent exists in <code>opencode.json</code> with full system prompt (not a stub)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Research-expert subagent exists in <code>opencode.json</code> with full system prompt (not a stub)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>.opencode/agents/reviewer.md</code> and <code>.opencode/agents/research-expert.md</code> are deleted</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>opencode.json</code> is syntactically valid after all subagent definitions are added</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Skill file is &lt;80 lines</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Drafter-reviewer workflow pattern survives (drafter drafts, dispatches reviewer, revises, compiles)</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v1.0-opencode-migration</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Workflow Migration</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 0: Job Application Assistant + Subagent Definitions</span>
+</nav>
+
+</article>
+
+</body>
+</html>

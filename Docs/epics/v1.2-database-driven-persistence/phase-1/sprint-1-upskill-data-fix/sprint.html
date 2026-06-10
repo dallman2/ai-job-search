@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 1: Upskill Data Fix — Phase 1 — v1.2-database-driven-persistence</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.2-database-driven-persistence" data-phase="1" data-sprint="1" data-status="completed">
+
+<header>
+  <h1>Sprint 1: Upskill Data Fix</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 1</span>
+    <span>Depends on: Sprint 0 (Scraper Skill Update)</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Fix the upskill skill's broken data pipeline. Currently it reads from <code>job_search_tracker.csv</code> (empty — 0 rows) while the real job data sits in <code>seen_jobs.json</code> (71 jobs). Switch the data source to the database, fix the <code>fit_rating</code> semantics mismatch (enum vs. 0–100 numeric), and ensure the upskill workflow can actually produce meaningful skill gap analyses.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>The upskill skill (<code>.opencode/skills/upskill/SKILL.md</code>) has two modes: aggregate (all tracked jobs) and targeted (a single URL). Both are currently broken in different ways:</p>
+  <ul>
+    <li><strong>Aggregate mode:</strong> Reads <code>job_search_tracker.csv</code> which has <strong>zero data rows</strong>. The real job data (71 entries with descriptions, fit ratings, and skills) is in <code>seen_jobs.json</code>, but the upskill skill never reads that file. Result: aggregate mode always produces an empty heatmap.</li>
+    <li><strong>fit_rating semantics:</strong> The upskill spec says <code>fit_rating</code> is a numeric 0–100 column, but the actual data uses string enums: <code>high</code>, <code>medium</code>, <code>low</code>, <code>unrated</code>. The weighting formula <code>(100 - fit_rating) / 100</code> would error on string values.</li>
+    <li><strong>Targeted mode:</strong> WebFetches a single URL — this works independently of the tracker, but still uses the wrong fit_rating semantics.</li>
+  </ul>
+  <p>With the unified database, both issues are resolved:</p>
+  <ul>
+    <li>Aggregate mode queries <code>python3 db/client.py jobs list --status applied --status evaluated</code> — returning actual job data with full descriptions.</li>
+    <li>The new <code>evaluation_score</code> column (0–100) is the correct numeric field for weighting. For jobs without an evaluation score, <code>fit_rating</code> maps to a default: high=80, medium=50, low=20, unrated=50.</li>
+    <li>Targeted mode remains unchanged (WebFetch-based), but the report now saves to the standard <code>upskill/</code> directory alongside data-driven reports.</li>
+  </ul>
+</section>
+
+<section id="files-to-modify">
+  <h2>Files to Modify</h2>
+  <table>
+    <thead><tr><th>File</th><th>Sections Changed</th><th>Approx. Lines</th></tr></thead>
+    <tbody>
+      <tr><td><code>.opencode/skills/upskill/SKILL.md</code></td><td>Mode, Pass 1, Output</td><td>~15 lines changed across 3 sections</td></tr>
+      <tr><td><code>db/main.py</code></td><td>Add <code>GET /jobs/skills/aggregate</code> endpoint for weighted skill frequency analysis</td><td>~30 lines added</td></tr>
+      <tr><td><code>db/client.py</code></td><td>Add <code>skills aggregate</code> subcommand</td><td>~15 lines added</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="change-catalog">
+  <h2>Change Catalog</h2>
+
+  <h3>Upskill SKILL.md</h3>
+  <table>
+    <thead><tr><th>Section</th><th>Old</th><th>New</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Mode — aggregate</td>
+        <td><code>Analyze all jobs in job_search_tracker.csv. Use the fit_rating column (0–100) to weight gaps — lower fit means the role exposed more gaps.</code></td>
+        <td><code>Analyze all evaluated and applied jobs in the database: python3 db/client.py jobs list --status evaluated --status applied. Use evaluation_score (0–100) for weighting where available; fall back to fit_rating mapping (high=80, medium=50, low=20, unrated=50). Lower scores mean the role exposed more gaps.</code></td>
+      </tr>
+      <tr>
+        <td>Mode — aggregate data loading</td>
+        <td><code>Load the most recent upskill/report-YYYY-MM-DD.md for the "Since Last Report" diff.</code></td>
+        <td><code>Load the most recent upskill/report-YYYY-MM-DD.md for the "Since Last Report" diff. Also query python3 db/client.py jobs list --status applied --status evaluated for current job data.</code></td>
+      </tr>
+      <tr>
+        <td>Pass 1 — infer skills</td>
+        <td><code>Infer skills from role, sector, and notes columns (optionally WebFetch the source URL)</code></td>
+        <td><code>Infer skills from title, description_md, and notes fields. Use python3 db/client.py jobs get &lt;id&gt; to load full descriptions. Do not WebFetch — the description_md already contains the full job posting text.</code></td>
+      </tr>
+      <tr>
+        <td>Pass 1 — weighting</td>
+        <td><code>score = sum of ((100 - fit_rating) / 100) across all jobs</code></td>
+        <td><code>score = sum of ((100 - effective_score) / 100) across all jobs, where effective_score = evaluation_score if set, else fit_rating mapped: high→80, medium→50, low→20, unrated→50.</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <ol>
+    <li data-task-id="4.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 4.1: Add GET /jobs/skills/aggregate endpoint</strong>
+        <data data-files="db/main.py"></data>
+        <p>New endpoint that accepts optional <code>?status=applied&status=evaluated</code> query params and returns a skill frequency map across matching jobs. The endpoint:</p>
+        <ul>
+          <li>Queries <code>SELECT id, title, company, description_text, evaluation_score, fit_rating FROM jobs WHERE status IN (...)</code></li>
+          <li>For each job, returns the raw data — the LLM (upskill skill) extracts skills from descriptions, this endpoint just provides the data efficiently</li>
+          <li>Returns a JSON array of job summaries: <code>[{"id": 1, "title": "...", "company": "...", "description_text": "...", "evaluation_score": null, "fit_rating": "high"}, ...]</code></li>
+          <li>Weighting and skill extraction remain the LLM's responsibility (Pass 1 pass in the upskill methodology)</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="4.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 4.2: Add "skills aggregate" subcommand to client.py</strong>
+        <data data-files="db/client.py"></data>
+        <p><code>python3 db/client.py skills aggregate [--status applied] [--status evaluated]</code> → calls <code>GET /jobs/skills/aggregate?status=applied&status=evaluated</code> and prints the JSON array.</p>
+      </div>
+    </li>
+    <li data-task-id="4.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 4.3: Rewrite upskill SKILL.md — Mode section</strong>
+        <data data-files=".opencode/skills/upskill/SKILL.md"></data>
+        <p>Update lines 12–13 (aggregate mode) and lines 15–16 (profile loading):</p>
+        <ul>
+          <li>Replace <code>job_search_tracker.csv</code> reference with database query</li>
+          <li>Fix <code>fit_rating</code> semantics: document the enum-to-numeric mapping</li>
+          <li>Profile loading (<code>01-candidate-profile.md</code>) is unchanged</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="4.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 4.4: Rewrite upskill SKILL.md — Pass 1 section</strong>
+        <data data-files=".opencode/skills/upskill/SKILL.md"></data>
+        <p>Update lines 21–25 (hard skill diff):</p>
+        <ul>
+          <li>Data source: <code>python3 db/client.py skills aggregate --status applied --status evaluated</code> instead of CSV parsing</li>
+          <li>Skill inference: from <code>description_text</code> and <code>title</code> fields (not CSV columns)</li>
+          <li>Weighting: use <code>evaluation_score</code> with <code>fit_rating</code> fallback formula</li>
+          <li>Diff against profile: unchanged logic</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="4.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 4.5: Verify upskill produces non-empty results</strong>
+        <p>After migration (71 jobs in DB) and at least one job marked as evaluated:</p>
+        <ul>
+          <li>Run upskill in aggregate mode: the skill should query the DB and find jobs</li>
+          <li>Verify the Gap Heatmap has actual entries (not "No tracked jobs found")</li>
+          <li>Verify the Learning Plan has actual study resources (found via WebFetch)</li>
+          <li>Verify the report saves to <code>upskill/report-YYYY-MM-DD.md</code></li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> <code>python3 db/client.py skills aggregate</code> returns a JSON array of job summaries (not empty)</li>
+    <li><input type="checkbox"> The word "job_search_tracker.csv" appears zero times in the upskill SKILL.md</li>
+    <li><input type="checkbox"> The word "fit_rating (0-100)" is replaced with the enum-to-numeric mapping</li>
+    <li><input type="checkbox"> Aggregate mode queries the database, not a CSV file</li>
+    <li><input type="checkbox"> Weighting uses <code>evaluation_score</code> with <code>fit_rating</code> fallback</li>
+    <li><input type="checkbox"> When run with actual job data, the Gap Heatmap has &gt; 0 entries</li>
+    <li><input type="checkbox"> Targeted mode (URL-based) is unchanged and still works</li>
+    <li><input type="checkbox"> Report saves to the correct <code>upskill/</code> path with the correct naming convention</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.2-database-driven-persistence</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Orchestration Cutover &amp; Integration</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 1: Upskill Data Fix</span>
+</nav>
+
+</article>
+
+</body>
+</html>

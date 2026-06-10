@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 3: Indeed Integration — Phase 1 — v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.1-obscura-job-search-pipeline" data-phase="1" data-sprint="3" data-status="completed">
+
+<header>
+  <h1>Sprint 3: Indeed Integration</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 3</span>
+    <span>Depends on: Sprint 2</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Add Indeed.com as a supplementary CDP-driven search source alongside LinkedIn and Wellfound, expanding Phase 1 search coverage to the largest public job board in the US. Indeed is the highest-volume job board and captures roles from companies that do not use Greenhouse/Ashby/Lever (the board list) and do not post on LinkedIn or Wellfound. Adding it fills the last major coverage gap in the Phase 1 multi-strategy architecture.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>Sprint 2 unified board-list, LinkedIn, and Wellfound into a single pipeline. That pipeline now covers ~90% of the target search surface — but there's a structural blind spot: many companies post exclusively on Indeed. Indeed is the highest-volume job board in the United States by a wide margin, and no other strategy in the Phase 1 portfolio reaches it.</p>
+  <p>Fortunately, Indeed can reuse the same CDP infrastructure that Sprint 2 built for LinkedIn and Wellfound. Indeed's job search results page is JS-rendered and requires a real browser for extraction — the exact use case <code>cdp_search.py</code> was built for. No new infrastructure is needed. The work is additive: one new subcommand, one new extraction scriptlet, and wiring into the existing strategy orchestration in SKILL.md.</p>
+  <p>The key risk is Indeed's aggressive anti-bot posture (Cloudflare, CAPTCHA challenges). Even the user's real Chrome instance may be challenged. Indeed should be positioned as a "best-effort" supplementary source — if CAPTCHA'd, the pipeline skips Indeed and reports the issue, just as it does for cookie expiry on LinkedIn/Wellfound.</p>
+  <p><strong>v1.2 Congruence:</strong> The files modified in this sprint (<code>cdp_search.py</code>, <code>SKILL.md</code>, <code>search-queries.md</code>) overlap with <a href="../../v1.2-database-driven-persistence/epic-overview.html">v1.2-database-driven-persistence</a> Phase 1 Sprint 0 (Scraper Skill Update), which cuts over all scraper orchestration from flat files to <code>db/client.py</code>. This sprint is designed to be a <strong>tactical addition</strong> — it adds Indeed support to the current flat-file system without restructuring the persistence layer. v1.2 Sprint 0 accounts for Indeed in its cutover scope (D8: <code>--api-url</code> flag covers all <code>cdp_search.py</code> subcommands, including the new <code>indeed</code> subcommand). The dependency order is enforced: v1.1 Sprint 3 completes before v1.2 Phase 1 Sprint 0 begins.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Add <code>search_indeed()</code> function and <code>INDEED_EXTRACT_JS</code> extraction scriptlet to <code>cdp_search.py</code></li>
+      <li>Add <code>indeed</code> CLI subparser: <code>python3 cdp_search.py indeed "&lt;keywords&gt;" --count 10</code></li>
+      <li>Wire Indeed into unified strategy execution flow in SKILL.md (after LinkedIn/Wellfound, same CDP prerequisite check)</li>
+      <li>Add Indeed CAPTCHA/block detection: check for Cloudflare interstitial, report "Indeed blocked (CAPTCHA), skipping" in Issues</li>
+      <li>Add Indeed query templates to <code>search-queries.md</code> for Priority 1-5 categories</li>
+      <li>Update <code>run_history</code> schema documentation: <code>strategies</code> can include <code>"indeed"</code>; <code>strategies_failed</code> can include <code>"indeed"</code></li>
+      <li>Smoke test: extract live job cards from Indeed search results</li>
+      <li>Update epic overview and phase index with Sprint 3 row</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Indeed Easy Apply or form-filling (auto-apply is deferred, v1.1 D2)</li>
+      <li>Indeed account authentication (public search results don't require login)</li>
+      <li>Indeed salary data extraction (not present on search result cards)</li>
+      <li>Indeed CAPTCHA solving (best-effort; skip and report if blocked)</li>
+      <li>Indeed-hosted detail page scraping via <code>browser_navigate</code> (use <code>browser_markdown</code> on the detail page URL — same pattern as other strategies)</li>
+      <li>Persistence-layer restructuring (that's v1.2's scope — this sprint uses existing <code>seen_jobs.json</code> pattern)</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>0. Build Indeed CDP Search Client</h3>
+  <ol>
+    <li data-task-id="3.0a">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.0a: Add <code>search_indeed()</code> to cdp_search.py</strong>
+        <data data-files=".opencode/skills/job-scraper/cdp_search.py"></data>
+        <p>Add an Indeed search function to the CDP client. Indeed's search URL pattern:</p>
+        <pre><code>https://www.indeed.com/jobs?q=&lt;keywords&gt;&amp;l=San+Francisco%2C+CA&amp;sc=0kf%3Aexplvl(SENIOR_LEVEL)%3B&amp;sort=date</code></pre>
+        <p>Extraction JavaScript (<code>INDEED_EXTRACT_JS</code>): query <code>a[id^="job_"]</code> links from the search results page. For each match, extract the title from the link text, walk up to the parent card/row element, and extract company name and location from adjacent elements. Return a JSON array of <code>{title, company, location, url}</code> objects.</p>
+        <p>The function signature mirrors LinkedIn/Wellfound: <code>search_indeed(keywords, count=10)</code>. It creates a CDP client, navigates to the search URL with <code>wait_ms=5000</code> (Indeed is JS-heavy), extracts results, and returns the top <code>count</code> entries.</p>
+        <p>CAPTCHA detection: after extraction, if <code>document.title</code> or body text contains "are you a robot", "captcha", "verify you are human", or the URL redirects to a Cloudflare challenge, return an empty array with an error note. Do not retry — Indeed challenges are session-level, not transient.</p>
+      </div>
+    </li>
+    <li data-task-id="3.0b">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.0b: Add <code>indeed</code> CLI subparser</strong>
+        <data data-files=".opencode/skills/job-scraper/cdp_search.py"></data>
+        <p>Add <code>indeed</code> subparser following the same pattern as <code>linkedin</code>:</p>
+        <ul>
+          <li><code>python3 cdp_search.py indeed "senior engineer AI" --count 10</code> → JSON array of job cards</li>
+          <li><code>--count</code> defaults to 10, same as other subcommands</li>
+        </ul>
+        <p>No <code>--experience</code> flag needed — Indeed's <code>explvl(SENIOR_LEVEL)</code> filter is baked into the search URL. No location flag needed — SF Bay Area location is hardcoded (same as LinkedIn).</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>1. Update SKILL.md for Indeed Strategy</h3>
+  <ol>
+    <li data-task-id="3.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.1: Add Indeed CDP strategy to SKILL.md Supplementary section</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Add an "Indeed" subsection under "Supplementary strategy: CDP-Driven Authenticated Search" (same level as LinkedIn and Wellfound), containing:</p>
+        <dl>
+          <dt>Prerequisites</dt>
+          <dd>Same Chrome CDP check as LinkedIn/Wellfound. Indeed public search does not require login — no cookie files needed. However, a real Chrome instance is required (Indeed's JS rendering and anti-bot detection make Obscura's bundled Chromium unreliable).</dd>
+          <dt>Usage</dt>
+          <dd><code>python3 cdp_search.py indeed "&lt;keywords&gt;" --count 10</code>. Returns JSON array of <code>{title, company, location, url}</code> objects.</dd>
+          <dt>CAPTCHA handling</dt>
+          <dd>If the output is empty or contains a <code>"blocked": true</code> field, report: "Indeed blocked (CAPTCHA or anti-bot challenge). Skipping Indeed for this run." Continue with remaining strategies.</dd>
+        </dl>
+      </div>
+    </li>
+    <li data-task-id="3.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.2: Wire Indeed into unified strategy execution flow</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Update the unified strategy execution order in the Search section:</p>
+        <ol>
+          <li>Board-list search (always runs)</li>
+          <li>LinkedIn search (if Chrome CDP reachable)</li>
+          <li>Wellfound search (if Chrome CDP reachable)</li>
+          <li><strong>Indeed search (if Chrome CDP reachable)</strong> — runs last in the CDP sequence, after LinkedIn and Wellfound</li>
+        </ol>
+        <p>Update the flag detection logic: "fast" (default) includes Indeed. "deep" includes Indeed. No dedicated <code>--indeed</code> flag needed — Indeed is always included when CDP is available, same as the other CDP strategies.</p>
+        <p>Update error resilience: if Indeed returns CAPTCHA/blocked, skip Indeed, continue pipeline. Add to Issues section.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Update Search Queries</h3>
+  <ol>
+    <li data-task-id="3.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.3: Add Indeed query templates to search-queries.md</strong>
+        <data data-files=".opencode/skills/job-scraper/search-queries.md"></data>
+        <p>Add an "Indeed Search (Via CDP)" section with search queries covering all 5 priority tiers:</p>
+        <pre><code>### Indeed Search (Via CDP)
+
+Agentic/MCP:
+python3 cdp_search.py indeed "senior OR staff engineer agentic MCP" --count 10
+
+AI Infrastructure:
+python3 cdp_search.py indeed "senior OR staff engineer AI infrastructure Kubernetes" --count 10
+
+Platform Engineer:
+python3 cdp_search.py indeed "platform engineer AI agent" --count 10
+
+TypeScript AI Engineer:
+python3 cdp_search.py indeed "senior OR staff TypeScript engineer AI" --count 10
+
+Voice/Multimodal:
+python3 cdp_search.py indeed "senior OR staff engineer voice OR multimodal AI" --count 10
+
+Founding/Principal:
+python3 cdp_search.py indeed "founding engineer OR principal engineer AI" --count 10</code></pre>
+        <p>Note: the <code>explvl(SENIOR_LEVEL)</code> filter is baked into <code>search_indeed()</code>'s URL construction and does not need to be specified in queries. The keywords should focus on role and technology terms.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Smoke Test</h3>
+  <ol>
+    <li data-task-id="3.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.4: Test Indeed CDP search with live Chrome</strong>
+        <p>Acceptance bar:</p>
+        <ul>
+          <li>Chrome CDP is reachable (<code>python3 cdp_search.py status</code> returns <code>{"chrome": true}</code>)</li>
+          <li><code>python3 cdp_search.py indeed "senior engineer AI" --count 10</code> returns a valid JSON array</li>
+          <li>Each object has <code>title</code>, <code>company</code>, <code>location</code>, <code>url</code> fields with non-empty values</li>
+          <li>The URL field points to <code>indeed.com/viewjob?jk=...</code> or <code>indeed.com/rc/clk?jk=...</code></li>
+          <li>Results contain Bay Area-located jobs (San Francisco, Peninsula, East Bay, or Remote)</li>
+          <li>If Indeed returns a CAPTCHA challenge, the script returns empty array (does not crash)</li>
+          <li>Verify with at least 2 distinct keyword queries to confirm extraction consistency</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Update Epic Documentation</h3>
+  <ol>
+    <li data-task-id="3.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 3.5: Add Sprint 3 to epic overview and phase index</strong>
+        <data data-files="Docs/epics/v1.1-obscura-job-search-pipeline/epic-overview.html, Docs/epics/v1.1-obscura-job-search-pipeline/phase-1/index.html"></data>
+        <p>Add Sprint 3 row to the Phase Structure table in <code>epic-overview.html</code> (Phase 1, Sprint 3, "Indeed Integration", "planned", depends on Sprint 2). Add Sprint 3 row to <code>phase-1/index.html</code> sprints table. Update Phase 1 status in both documents if Sprint 3 is the final Phase 1 sprint.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Browser automation</td><td>CDP via <code>cdp_search.py</code> (real Chrome, same infrastructure as LinkedIn/Wellfound)</td></tr>
+      <tr><td>Page extraction</td><td>JavaScript DOM query via CDP <code>Runtime.evaluate</code></td></tr>
+      <tr><td>Search URL</td><td><code>indeed.com/jobs?q=...&amp;l=San+Francisco%2C+CA&amp;sc=0kf:explvl(SENIOR_LEVEL)&amp;sort=date</code></td></tr>
+      <tr><td>Anti-bot handling</td><td>Real Chrome session (reduced fingerprinting vs headless); detect CAPTCHA, skip gracefully</td></tr>
+      <tr><td>Persistence (v1.1)</td><td><code>seen_jobs.json</code> with existing dedup keys (URL or company+title)</td></tr>
+      <tr><td>Persistence (v1.2 future)</td><td>SQLite via <code>db/client.py</code> — <code>cdp_search.py</code> will gain <code>--api-url</code> flag in v1.2 D8</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="v1.2-congruence">
+  <h2>v1.2 Congruence</h2>
+  <p>This sprint modifies three files that <a href="../../../v1.2-database-driven-persistence/epic-overview.html">v1.2-database-driven-persistence</a> Phase 1 Sprint 0 (Scraper Skill Update) will also modify:</p>
+  <table>
+    <thead><tr><th>File</th><th>v1.1 Sprint 3 Change</th><th>v1.2 Sprint 0 Impact</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>cdp_search.py</code></td>
+        <td>Adds <code>search_indeed()</code> function + <code>indeed</code> subparser</td>
+        <td>v1.2 D8 adds <code>--api-url</code> flag that applies to <strong>all</strong> subcommands, including <code>indeed</code>. The v1.1 code is additive — v1.2's <code>--api-url</code> wraps it without conflict.</td>
+      </tr>
+      <tr>
+        <td><code>SKILL.md</code></td>
+        <td>Adds Indeed as a supplementary CDP strategy in Search section + wires into unified execution flow</td>
+        <td>v1.2 Sprint 0 replaces all <code>seen_jobs.json</code>/<code>job_search_tracker.csv</code> I/O (~25 references) with <code>db/client.py</code> calls. The Indeed strategy instructions simply reference the existing persistence pattern — they don't introduce new flat-file logic. v1.2's cutover is a search-and-replace that naturally covers Indeed references.</td>
+      </tr>
+      <tr>
+        <td><code>search-queries.md</code></td>
+        <td>Adds Indeed CDP query templates section</td>
+        <td>v1.2 Sprint 0 doesn't modify <code>search-queries.md</code> (it contains search URLs, not persistence logic). No conflict.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><strong>Dependency ordering:</strong> v1.1 Sprint 3 must complete before v1.2 Phase 1 Sprint 0 begins. The epic overview has been updated to reflect this dependency.</p>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span><code>python3 cdp_search.py indeed "senior engineer AI" --count 10</code> returns a valid JSON array of job cards with <code>title</code>, <code>company</code>, <code>location</code>, <code>url</code> fields</span>
+      <code>python3 cdp_search.py indeed "senior engineer AI" --count 10</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>python3 cdp_search.py status</code> response unchanged (CDP health check doesn't need Indeed awareness)</span>
+      <code>python3 cdp_search.py status</code>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md Search section describes Indeed as a supplementary CDP strategy with CAPTCHA handling</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md unified execution flow includes Indeed in the CDP strategy sequence (after LinkedIn, before dedup)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>search-queries.md</code> includes Indeed CDP query templates for all 5 priority categories</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Indeed results flow through the same unified dedup and scoring pipeline as other strategies</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>If Indeed returns a CAPTCHA or anti-bot challenge, the pipeline skips Indeed and reports in Issues — no crash</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Summary line reports whether Indeed contributed results (or was skipped/blocked)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>run_history</code> schema: <code>strategies</code> can include <code>"indeed"</code>; <code>strategies_failed</code> can include <code>"indeed"</code></span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Epic overview and phase index updated with Sprint 3 row</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.1-obscura-job-search-pipeline</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Search Coverage Expansion</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 3: Indeed Integration</span>
+</nav>
+
+</article>
+
+</body>
+</html>

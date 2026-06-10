@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 0: Obscura Docker &amp; MCP Registration — Phase 0 — v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.1-obscura-job-search-pipeline" data-phase="0" data-sprint="0" data-status="completed">
+
+<header>
+  <h1>Sprint 0: Obscura Docker &amp; MCP Registration</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 0</span>
+    <span>Depends on: &mdash;</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Pull the Obscura Docker image, start the container in MCP HTTP mode with stealth enabled, register it as a remote MCP server in <code>opencode.json</code>, and smoke-test <code>browser_navigate</code> + <code>browser_snapshot</code> on all 4 target job boards. At the end of this sprint, the LLM can browse Greenhouse, Ashby, Wellfound, and Y Combinator job pages and extract clean markdown content from JS-rendered pages that <code>WebFetch</code> cannot reach.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p><code>WebFetch</code> is a static HTTP fetcher. It cannot execute JavaScript. Greenhouse, Ashby, Wellfound, and YC Jobs all render job listings client-side via React or similar frameworks. The result is that <code>WebFetch</code> returns empty spinner divs or "You need to enable JavaScript to run this app" for every job board the candidate cares about. The user has been working around this by manually saving HTML files to <code>postings/</code>.</p>
+  <p>Obscura is a Rust headless browser engine that runs real JavaScript via V8, supports the Chrome DevTools Protocol for Puppeteer/Playwright compatibility, and exposes an MCP server with <code>browser_navigate</code>, <code>browser_snapshot</code>, <code>browser_evaluate</code>, and other tools. It uses 30 MB of memory (vs 200+ MB for headless Chrome), loads pages in 85 ms (vs ~500 ms), and has built-in stealth mode that blocks 3,520 tracker domains and randomizes browser fingerprints per session.</p>
+  <p>The Docker image is <code>h4ckf0r0day/obscura</code> on Docker Hub. It is multi-stage, builds from <code>rust:1-slim-bookworm</code>, and runs on <code>distroless/cc-debian12</code> with no shell and no package manager. The compressed image is 57 MB. The default <code>ENTRYPOINT</code> is <code>/obscura</code> and the default <code>CMD</code> is <code>["serve", "--port", "9222", "--host", "0.0.0.0"]</code>. For MCP mode, we override <code>CMD</code> to run <code>mcp --http --port 8080 --host 0.0.0.0 --stealth</code>.</p>
+  <p>opencode supports remote MCP servers via <code>"type": "remote"</code> with a <code>"url"</code> pointing to the MCP endpoint. The Obscura MCP HTTP endpoint is at <code>/mcp</code> (SSE transport).</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Pull the Obscura Docker image from Docker Hub</li>
+      <li>Start the container in MCP HTTP mode with stealth enabled</li>
+      <li>Verify the container is running and the MCP endpoint responds</li>
+      <li>Register Obscura as a remote MCP server in <code>opencode.json</code></li>
+      <li>Smoke test <code>browser_navigate</code> + <code>browser_snapshot</code> on a Greenhouse job posting</li>
+      <li>Smoke test on an Ashby job posting</li>
+      <li>Smoke test on a Wellfound search results page</li>
+      <li>Smoke test on a Y Combinator jobs search page</li>
+      <li>Verify stealth mode: no captchas, no Cloudflare challenges, no blocks</li>
+      <li>Set MCP timeout to 30 seconds (pages may take longer than the default 5s)</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Any scraping logic or query execution (Sprint 1)</li>
+      <li>Any job evaluation or scoring (Sprint 2)</li>
+      <li>Error handling or batch orchestration (Sprint 3)</li>
+      <li>Installing Obscura as a binary on the host machine</li>
+      <li>CDP server mode (<code>obscura serve</code>) &mdash; we use MCP mode exclusively</li>
+      <li>Puppeteer/Playwright connectivity &mdash; only MCP tools are used</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Pull and Start Obscura</h3>
+  <ol>
+    <li data-task-id="0.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.1: Pull the Obscura Docker image</strong>
+        <p><code>docker pull h4ckf0r0day/obscura</code>. Verify with <code>docker images | grep obscura</code>. Expected: ~57 MB compressed image.</p>
+      </div>
+    </li>
+    <li data-task-id="0.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.2: Start container in MCP HTTP mode with stealth</strong>
+        <p><code>docker run -d --name obscura -p 127.0.0.1:8080:8080 h4ckf0r0day/obscura mcp --http --port 8080 --host 0.0.0.0 --stealth</code></p>
+        <p>This overrides the default <code>CMD</code> (<code>serve</code>) with <code>mcp</code>. The <code>--host 0.0.0.0</code> flag binds to all interfaces inside the container so the port mapping works. <code>--stealth</code> enables anti-fingerprinting and tracker blocking.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Verify Container Health</h3>
+  <ol>
+    <li data-task-id="0.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.3: Verify container is running</strong>
+        <p><code>docker ps --filter name=obscura</code>. Confirm status is "Up" and port mapping shows <code>127.0.0.1:8080-&gt;8080/tcp</code>.</p>
+      </div>
+    </li>
+    <li data-task-id="0.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.4: Verify MCP endpoint responds</strong>
+        <p><code>docker logs obscura</code> should show the server started successfully. Test the SSE endpoint: <code>curl -s http://127.0.0.1:8080/mcp/sse</code> should return an SSE event stream.</p>
+        <p><strong>Fallback if <code>--host</code> flag is unsupported by <code>mcp</code> subcommand:</strong> remove and recreate the container with <code>--network host</code> instead of port mapping: <code>docker rm -f obscura && docker run -d --name obscura --network host h4ckf0r0day/obscura mcp --http --port 8080 --stealth</code>.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Register MCP Server in opencode</h3>
+  <ol>
+    <li data-task-id="0.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.5: Add obscura MCP server to opencode.json</strong>
+        <data data-files="opencode.json"></data>
+        <p>Add an <code>"mcp"</code> block to <code>opencode.json</code> with the obscura server configured as a remote HTTP MCP:</p>
+        <pre><code>"mcp": {
+  "obscura": {
+    "type": "remote",
+    "url": "http://127.0.0.1:8080/mcp",
+    "enabled": true,
+    "timeout": 30000
+  }
+}</code></pre>
+        <p>The <code>timeout</code> of 30000 ms accounts for page loads that may exceed the default 5-second limit. Job board pages with heavy JS can take 10-15 seconds to render.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Smoke Test: Greenhouse</h3>
+  <ol>
+    <li data-task-id="0.6">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.6: Navigate to a Greenhouse job posting and extract content</strong>
+        <p>Use the existing Thinking Machines Lab DevProd posting as a test case: <code>https://job-boards.greenhouse.io/thinkingmachines/jobs/5111543008</code>. Call <code>browser_navigate</code> with the URL, then <code>browser_snapshot</code> to extract the page content. Verify the output includes the job title ("Software Engineer, Developer Productivity, AI Tools"), location ("San Francisco"), and body content.</p>
+        <p>Expected: clean markdown output containing the full job description. No "You need to enable JavaScript" messages. No empty divs.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>5. Smoke Test: Ashby</h3>
+  <ol>
+    <li data-task-id="0.7">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.7: Navigate to an Ashby job posting and extract content</strong>
+        <p>Use the Wispr Flow posting: <code>https://jobs.ashbyhq.com/wispr-flow/8a9f60cd-ab73-42d6-9450-94dfbe80886e</code>. Call <code>browser_navigate</code> then <code>browser_snapshot</code>. Verify the output includes the job title ("Senior Software Engineer"), company ("Wispr Flow"), and body content.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>6. Smoke Test: Wellfound</h3>
+  <ol>
+    <li data-task-id="0.8">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.8: Navigate to a Wellfound search results page</strong>
+        <p>Navigate to a Wellfound AI engineering search: <code>https://wellfound.com/jobs?keywords=AI+engineer&amp;location=san-francisco</code>. Call <code>browser_navigate</code> with <code>waitUntil: "networkidle0"</code> (Wellfound loads listings dynamically), then <code>browser_snapshot</code>. Verify job listing cards appear in the output.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>7. Smoke Test: Y Combinator Jobs</h3>
+  <ol>
+    <li data-task-id="0.9">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.9: Navigate to a YC jobs search page</strong>
+        <p>Navigate to <code>https://www.ycombinator.com/jobs?tags=ai</code>. Call <code>browser_navigate</code> then <code>browser_snapshot</code>. Verify job listing cards appear. Confirm pagination is visible (YC uses standard pagination, no infinite scroll).</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>8. Verify Stealth Mode</h3>
+  <ol>
+    <li data-task-id="0.10">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.10: Confirm no blocks or captchas on any board</strong>
+        <p>For each of the 4 boards above, confirm that the page rendered normally without: Cloudflare "checking your browser" interstitial, reCAPTCHA challenges, empty or truncated content, HTTP 403 responses. Stealth mode should handle all of these preemptively.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Headless browser</td><td><a href="https://github.com/h4ckf0r0day/obscura">Obscura</a> (Rust, V8 JS engine, CDP-compatible)</td></tr>
+      <tr><td>Container runtime</td><td>Docker (image: <code>h4ckf0r0day/obscura</code>, distroless/cc base)</td></tr>
+      <tr><td>MCP transport</td><td>HTTP SSE (endpoint: <code>/mcp</code>)</td></tr>
+      <tr><td>Config change</td><td>Edit tool on <code>opencode.json</code></td></tr>
+      <tr><td>Verification</td><td><code>docker ps</code>, <code>docker logs</code>, <code>curl</code>, LLM MCP tool calls</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>docker pull h4ckf0r0day/obscura</code> succeeded (image: v0.1.7, 57 MB compressed)</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>MCP stdio mode confirmed working in Docker: <code>docker run -i --rm h4ckf0r0day/obscura mcp --stealth</code> responds to JSON-RPC initialize</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>MCP tools/list returns all expected tools (<code>browser_navigate</code>, <code>browser_snapshot</code>, <code>browser_evaluate</code>, <code>browser_markdown</code>, etc.)</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>opencode.json</code> contains <code>"mcp.obscura"</code> with <code>"type": "local"</code>, command <code>["docker", "run", "-i", "--rm", "--name", "obscura-mcp", "h4ckf0r0day/obscura", "mcp", "--stealth"]</code>, <code>"enabled": true</code>, <code>"timeout": 30000</code></span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>Greenhouse: <code>obscura fetch --dump markdown</code> returns clean job description content</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>Ashby: <code>obscura fetch --eval</code> extracts JSON-LD structured data containing full job description</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>YC Jobs: <code>obscura fetch --dump markdown</code> returns job listing cards with titles, companies, descriptions</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>Wellfound: blocked by DataDome captcha (external limitation, documented)</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>Google: blocked by CAPTCHA (external limitation, documented)</span>
+    </li>
+  </ul>
+
+  <section id="deviation">
+    <h3>Deviation: HTTP mode replaced with stdio mode</h3>
+    <p>The <code>obscura mcp --http</code> command binds to <code>127.0.0.1</code> inside the container but lacks a <code>--host</code> flag to bind to <code>0.0.0.0</code>. Docker port forwarding (<code>-p</code>) cannot reach loopback-bound ports. The <code>serve</code> subcommand supports <code>--host 0.0.0.0</code> but <code>mcp</code> does not. The workaround is stdio mode: opencode spawns <code>docker run -i --rm ... mcp --stealth</code> and communicates over stdin/stdout, which works correctly across the container boundary. This is functionally equivalent &mdash; the same MCP server, same tools, just a different transport.</p>
+  </section>
+</section>
+    <li>
+      <input type="checkbox">
+      <span><code>docker logs obscura</code> shows MCP server started successfully on port 8080</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>curl -s http://127.0.0.1:8080/mcp/sse</code> returns SSE event stream</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>opencode.json</code> contains <code>"mcp.obscura"</code> with <code>"type": "remote"</code> and <code>"enabled": true</code></span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>LLM can call <code>browser_navigate</code> on a Greenhouse URL and <code>browser_snapshot</code> returns the full job description as markdown</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>LLM can call <code>browser_navigate</code> on an Ashby URL and <code>browser_snapshot</code> returns the full job description as markdown</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>LLM can call <code>browser_navigate</code> on a Wellfound search URL and <code>browser_snapshot</code> returns job listing cards</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>LLM can call <code>browser_navigate</code> on a YC jobs URL and <code>browser_snapshot</code> returns job listing cards</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>No captchas, Cloudflare challenges, or HTTP 403 responses on any of the 4 target boards</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>MCP tools appear in the LLM's available tool list alongside built-in tools</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.1-obscura-job-search-pipeline</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0: Pipeline Construction</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 0: Obscura Docker &amp; MCP Registration</span>
+</nav>
+
+</article>
+
+</body>
+</html>

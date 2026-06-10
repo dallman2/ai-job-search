@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 0 — v1.2-database-driven-persistence</title>
+<link rel="stylesheet" href="../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="phase-overview" data-epic="v1.2-database-driven-persistence" data-phase="0" data-status="completed">
+
+<header>
+  <h1>Phase 0: Infrastructure &amp; Data Layer</h1>
+  <div class="meta">
+    <span>Epic: v1.2-database-driven-persistence</span>
+    <span>Phase: 0</span>
+    <span>Depends on: v1.1-obscura-job-search-pipeline Phase 1 Sprint 3 (Indeed Integration)</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Phase Objective</h2>
+  <p>Build the SQLite API container, deploy it on a local kind cluster with persistent storage, and migrate all 71 existing jobs from <code>seen_jobs.json</code> into the new database. At the end of this phase, the database is running, queryable, and populated — but the scraper and upskill skills still use the old JSON/CSV files. Phase 1 will cut over the orchestration.</p>
+</section>
+
+<section id="sprints">
+  <h2>Sprints</h2>
+
+  <table>
+    <thead>
+      <tr><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="sprint-0-sqlite-api-container/sprint.html">Sprint 0</a></td>
+        <td>SQLite API Container</td>
+        <td data-status="completed">Completed</td>
+        <td>&mdash;</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-1-kind-deployment/sprint.html">Sprint 1</a></td>
+        <td>kind Deployment &amp; Persistence</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-2-data-migration/sprint.html">Sprint 2</a></td>
+        <td>Data Migration</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 1</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../epic-overview.html">v1.2-database-driven-persistence</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Phase 0: Infrastructure &amp; Data Layer</span>
+</nav>
+
+</article>
+
+</body>
+</html>

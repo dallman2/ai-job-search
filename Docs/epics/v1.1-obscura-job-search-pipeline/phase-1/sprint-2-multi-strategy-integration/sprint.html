@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 2: Multi-Strategy Integration &amp; Full Smoke Test — Phase 1 — v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.1-obscura-job-search-pipeline" data-phase="1" data-sprint="2" data-status="planned">
+
+<header>
+  <h1>Sprint 2: Multi-Strategy Integration &amp; Full Smoke Test</h1>
+  <div class="meta">
+    <span>Phase: 1</span>
+    <span>Sprint: 2</span>
+    <span>Depends on: Sprint 1</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Wire the board-list and cookie-auth search strategies into a single unified pipeline with clean flag-based control. Add error handling for mixed-strategy failures. Update output formatting to report which strategies contributed results. Run a full end-to-end smoke test proving the pipeline returns jobs from 5+ companies across 3+ board platforms. Update the epic overview and acceptance criteria to reflect multi-strategy coverage. At the end of this sprint, Phase 1 is production-grade.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>Sprint 0 delivers board-list search (30-50 companies, no auth). Sprint 1 delivers cookie-auth search (LinkedIn, Wellfound). But they're separate paths. The user doesn't want to run three separate commands. "scrape jobs fast" should run the most effective available strategy combination by default and present unified results.</p>
+  <p>The default fast path: board-list runs first (fastest, most reliable, covers 80% of target companies). If cookie files are present, LinkedIn and Wellfound searches supplement. All results flow through the same dedup and scoring pipeline. The user sees one table.</p>
+  <p>The smoke test is critical because Phase 0's smoke test was the canary that revealed the coverage gap. Phase 1's smoke test must prove we fixed it.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Unify board-list and cookie-auth search into a single pipeline execution flow</li>
+      <li>Default "fast" mode: board-list (15-20 companies) + LinkedIn/Wellfound if cookies available</li>
+      <li>"deep" mode: full board-list (all companies) + LinkedIn/Wellfound if cookies available</li>
+      <li>"board-list" flag: board-list only (fastest reliable path, zero auth required)</li>
+      <li>"--linkedin" and "--wellfound" flags: individual cookie-auth searches</li>
+      <li>Error handling for mixed-strategy failures: cookie expiry, individual board failure, partial results</li>
+      <li>Update <code>run_history</code> in <code>seen_jobs.json</code> to track which strategies were used and which failed</li>
+      <li>Update output format: summary line includes strategy breakdown; Issues section reports per-strategy failures</li>
+      <li>Full end-to-end smoke test: "scrape jobs fast" returns jobs from 5+ companies across 3+ platforms</li>
+      <li>Update epic-overview.html Phase 1 status and acceptance criteria</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Automated scheduled runs (GitHub Actions — future work, already documented)</li>
+      <li>Slack/email notifications</li>
+      <li>LinkedIn Easy Apply or form-filling</li>
+      <li>Proxy rotation or IP management</li>
+      <li>Removing or deprecating Google <code>site:</code> queries from <code>search-queries.md</code> (kept as fallback reference)</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>0. Build CDP Search Client for LinkedIn and Wellfound</h3>
+  <ol>
+    <li data-task-id="2.0a">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.0a: Create CDP search client</strong>
+        <data data-files=".opencode/skills/job-scraper/cdp_search.py"></data>
+        <p>Build a Python script that drives the user's real Chrome instance via CDP to execute LinkedIn and Wellfound job searches. The real Chrome is already signed in — no cookie files, no injection, no headless browser bot detection.</p>
+        <p>The script reuses CDP WebSocket infrastructure from <code>export_chrome_cdp.py</code> and adds page navigation, load-event waiting, and DOM extraction. It exposes a CLI:</p>
+        <ul>
+          <li><code>python3 cdp_search.py linkedin "keywords" --count N --experience 4,5,6</code> → JSON array of {title, company, location, url}</li>
+          <li><code>python3 cdp_search.py wellfound "keywords" --count N</code> → JSON array of {title, company, location, salary, url}</li>
+          <li><code>python3 cdp_search.py status</code> → {chrome: bool, tabs: int}</li>
+        </ul>
+        <p>Accepts that Obscura's bundled Chromium cannot execute LinkedIn/Wellfound JS (bot detection). The CDP approach works because it's the user's actual browser instance with full JS execution and no fingerprinting anomalies.</p>
+      </div>
+    </li>
+    <li data-task-id="2.0b">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.0b: Wire CDP client into SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Replace all cookie-injection-based LinkedIn/Wellfound search instructions with CDP-driven search. Remove cookie-file dependency for search flow (Sprint 1 cookie export remains valid for diagnostics). Update error resilience: Chrome CDP unreachable → skip LinkedIn/Wellfound, continue with board-list.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>1. Unify Strategy Execution</h3>
+  <ol>
+    <li data-task-id="2.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.1: Define unified strategy execution order in SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Update the Search section to describe the unified execution flow:</p>
+        <ol>
+          <li><strong>Board-list search</strong> (always runs): Visit each company's board URL via webfetch/Obscura. Extract listing URLs. Pre-filter by location and level. Collect all promising listing URLs.</li>
+          <li><strong>LinkedIn search</strong> (if Chrome CDP is reachable and default mode or <code>--linkedin</code> flag): Run <code>cdp_search.py linkedin "keywords"</code> via bash. Parse JSON output for listing URLs.</li>
+          <li><strong>Wellfound search</strong> (if Chrome CDP is reachable and default mode or <code>--wellfound</code> flag): Run <code>cdp_search.py wellfound "keywords"</code> via bash. Parse JSON output for listing URLs.</li>
+          <li><strong>Unified dedup + fetch</strong>: All collected listing URLs flow into the Fetch &amp; Deduplicate phase. Dedup across all strategies.</li>
+        </ol>
+      </div>
+    </li>
+    <li data-task-id="2.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.2: Update flag detection logic</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Update run mode triggers in the State section:</p>
+        <ul>
+          <li>"fast" (default): board-list (15-20 prioritized companies) + LinkedIn + Wellfound (if cookies)</li>
+          <li>"deep": full board-list (all companies) + LinkedIn + Wellfound (if cookies)</li>
+          <li>"board-list": board-list only, skip all cookie-auth strategies</li>
+          <li>"--linkedin": include LinkedIn search (requires cookies)</li>
+          <li>"--wellfound": include Wellfound search (requires cookies)</li>
+          <li>"new": diff against last_run, compatible with all strategies</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Error Handling for Mixed Strategies</h3>
+  <ol>
+    <li data-task-id="2.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.3: Add mixed-strategy error handling to SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Update the Error Resilience section to handle mixed-strategy failures:</p>
+        <ul>
+          <li>If a cookie file exists but injection fails or cookies are expired: skip that strategy, continue with others, report in Issues.</li>
+          <li>If a board-list company's board URL returns 5xx: skip that company, continue with remaining companies.</li>
+          <li>If ALL strategies produce zero results: report "No jobs found across any strategy. Board-list returned 0, [LinkedIn/Wellfound skipped or returned 0]."</li>
+          <li>Track per-strategy failure counts in run state for reporting.</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Output Format Updates</h3>
+  <ol>
+    <li data-task-id="2.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.4: Update output format for multi-strategy results</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Update the Output section:</p>
+        <ul>
+          <li>Summary line: "Found [total] jobs from [N] companies across [strategy list]. [high] high matches, [med] medium matches. [skipped] low matches skipped."</li>
+          <li>Example: "Found 47 jobs from 8 companies (board-list: Anthropic, OpenAI, LangChain, ElevenLabs, Modal; LinkedIn: 3 additional). 11 high matches, 9 medium matches. 27 skipped."</li>
+          <li>Issues section reports per-strategy failures: "LinkedIn cookies expired — re-export from browser. Wellfound returned no results."</li>
+          <li>If strategies were skipped due to missing cookies: "LinkedIn skipped (no cookies). Wellfound skipped (no cookies). Run 'scrape jobs fast --linkedin' after exporting cookies."</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="2.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.5: Update run_history tracking for multi-strategy runs</strong>
+        <data data-files="job_scraper/seen_jobs.json"></data>
+        <p>Extend the <code>run_history</code> entry schema to track per-strategy results:</p>
+        <pre><code>{
+  "date": "2026-06-08T14:30:00Z",
+  "mode": "fast",
+  "strategies": ["board-list", "linkedin"],
+  "companies_checked": 18,
+  "jobs_found": 47,
+  "jobs_new": 20,
+  "strategies_failed": ["wellfound"]
+}</code></pre>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Full Smoke Test</h3>
+  <ol>
+    <li data-task-id="2.6">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.6: Run full end-to-end smoke test</strong>
+        <p>Execute "scrape jobs fast" with the following acceptance bar:</p>
+        <ul>
+          <li>Board-list search visits 15-20 company boards</li>
+          <li>At least 3 distinct companies produce results</li>
+          <li>Results come from at least 2 different ATS platforms (Greenhouse + Ashby/Lever)</li>
+          <li>If Chrome CDP is reachable, LinkedIn and/or Wellfound produce supplementary results (at least 3 distinct listings each)</li>
+          <li>No single board failure crashes the pipeline</li>
+          <li>Output table contains 5+ non-Anthropic companies</li>
+          <li>Summary line reports strategy breakdown</li>
+          <li>Issues section reports any failures (expected: Wellfound may still have issues)</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>5. Update Epic Docs</h3>
+  <ol>
+    <li data-task-id="2.7">
+      <input type="checkbox">
+      <div>
+        <strong>Task 2.7: Update epic-overview.html with Phase 1 completion</strong>
+        <data data-files="Docs/epics/v1.1-obscura-job-search-pipeline/epic-overview.html"></data>
+        <p>Update the Phase Structure table: set Phase 1 status to "completed". Update epic acceptance criteria to include multi-strategy coverage: "scrape jobs fast returns jobs from 5+ distinct companies across 3+ board platforms."</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Strategy orchestration</td><td>SKILL.md flag-based execution (board-list, --linkedin, --wellfound)</td></tr>
+      <tr><td>Unified dedup</td><td><code>seen_jobs.json</code> compound key across all strategies</td></tr>
+      <tr><td>Output formatting</td><td>Markdown table with strategy breakdown in summary line</td></tr>
+      <tr><td>Run state</td><td>Extended <code>run_history</code> schema with per-strategy tracking</td></tr>
+      <tr><td>Verification</td><td>End-to-end smoke test across Greenhouse, Ashby, Lever, LinkedIn, Wellfound</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span>Default "scrape jobs fast" runs board-list + LinkedIn + Wellfound (if cookies present)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>"scrape jobs fast --board-list" runs board-list only, skipping all cookie-auth strategies</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>"scrape jobs fast --linkedin" runs LinkedIn search with cookies</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>All strategies feed into the same dedup and scoring pipeline</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>A cookie expiry on one strategy does not crash the pipeline; other strategies continue</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>A 5xx on one board-list URL does not crash the pipeline; remaining companies continue</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Summary line reports strategy breakdown: "from [N] companies across [strategies]"</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Issues section reports per-strategy failures (expired cookies, unreachable boards, partial results)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>run_history</code> entry includes <code>strategies</code>, <code>companies_checked</code>, and <code>strategies_failed</code></span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Full smoke test returns jobs from 5+ distinct companies across 3+ board platforms</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>At least 3 of the companies in the smoke test results are NOT Anthropic</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>Epic overview Phase 1 status updated and acceptance criteria expanded</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.1-obscura-job-search-pipeline</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Search Coverage Expansion</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 2: Multi-Strategy Integration &amp; Full Smoke Test</span>
+</nav>
+
+</article>
+
+</body>
+</html>

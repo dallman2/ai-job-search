@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cookie Export via CDP — Sprint 1 Corollary — v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="corollary" data-epic="v1.1-obscura-job-search-pipeline" data-phase="1" data-sprint="1" data-parent="sprint-1-cookie-injection">
+
+<header>
+  <h1>Cookie Export via Chrome DevTools Protocol</h1>
+  <div class="meta">
+    <span>Type: Sprint 1 Corollary</span>
+    <span>Parent: <a href="sprint.html">Sprint 1: Cookie Injection &amp; Authenticated Boards</a></span>
+    <span>Status: completed</span>
+  </div>
+</header>
+
+<section id="problem">
+  <h2>Problem</h2>
+  <p>The <code>job-scraper</code> pipeline needs the candidate's live browser session cookies to search LinkedIn and Wellfound. Obscura's <code>browser_set_cookie</code> tool can inject cookies before navigation — but the cookies must first be extracted from the candidate's real browser, where they are already signed in.</p>
+  <p><strong>Constraints:</strong></p>
+  <ul>
+    <li><strong>No browser extensions.</strong> Extensions that read all cookies (e.g., EditThisCookie) are a security vulnerability — they can exfiltrate session tokens to third parties.</li>
+    <li><strong>No Keychain access.</strong> Reading Chrome's encrypted SQLite cookie database requires decrypting with the macOS Keychain-derived key. This means granting the terminal Keychain access, which injects trust into a broad attack surface.</li>
+    <li><strong>Must capture httpOnly cookies.</strong> LinkedIn's session token (<code>li_at</code>) is httpOnly — inaccessible via <code>document.cookie</code> from JavaScript in the page context.</li>
+    <li><strong>No pip dependencies.</strong> The candidate's system Python may not have <code>pycryptodome</code>, <code>cryptography</code>, or <code>websocket-client</code> installed.</li>
+    <li><strong>Must be a script we own.</strong> The solution must be a file in the repository, not a third-party tool or manual process.</li>
+  </ul>
+</section>
+
+<section id="solution">
+  <h2>Solution: Chrome DevTools Protocol (CDP)</h2>
+  <p>Chrome exposes a debugging interface on <code>localhost:9222</code> when started with <code>--remote-debugging-port=9222 --user-data-dir=/tmp/chrome-cdp-session</code>. This is the same protocol that DevTools, Puppeteer, and Playwright use internally. The <code>Network.getCookies</code> CDP method returns <strong>all cookies for a domain including httpOnly</strong> — because it runs at the browser engine level, not in the page's JavaScript sandbox.</p>
+
+  <h3>Architecture</h3>
+  <pre><code>Chrome (--remote-debugging-port=9222 --user-data-dir=/tmp/chrome-cdp-session)
+  │
+  ├── TCP endpoint: http://localhost:9222/json
+  │   Returns JSON array of open tabs with WebSocket debugger URLs
+  │
+  ├── WebSocket: ws://localhost:9222/devtools/page/[id]
+  │   Bidirectional CDP command channel
+  │
+  └── CDP Command: Network.getCookies
+      Returns ALL cookies for matching domains (including httpOnly)
+
+export_chrome_cdp.py
+  │
+  ├── 1. GET /json → discover tabs, find matching domain
+  ├── 2. WebSocket connect to tab's debugger URL
+  ├── 3. Send {method: "Network.getCookies", params: {urls: [...]}}
+  ├── 4. Receive response, filter by domain, format as JSON
+  └── 5. Output to stdout (piped to cookies/linkedin.json)</code></pre>
+
+  <h3>Implementation</h3>
+  <p>The script at <code>cookies/export_chrome_cdp.py</code> uses only Python standard library:</p>
+  <ul>
+    <li><code>urllib.request</code> — HTTP GET to <code>localhost:9222/json</code> for tab discovery</li>
+    <li><code>socket</code> + <code>ssl</code> — TCP+TLS connection with WebSocket upgrade handshake, frame encoding/decoding</li>
+    <li><code>json</code> — CDP command serialization and response parsing</li>
+    <li><code>base64</code>, <code>hashlib</code>, <code>os</code> — WebSocket handshake key generation (Sec-WebSocket-Key)</li>
+    <li><code>struct</code> — WebSocket frame length encoding</li>
+  </ul>
+  <p><strong>Optimization:</strong> If <code>websocket-client</code> is available in the Python environment, the script uses it for cleaner WebSocket handling and falls back to the stdlib implementation otherwise. The <code>websocket-client</code> path is < 20 lines; the stdlib path is ~80 lines of minimal WebSocket client.</p>
+  <p><strong>WebSocket handling (stdlib fallback):</strong> The script implements a minimal RFC 6455 client — unidirectional text frames only (send text, receive text, detect close). No ping/pong, no fragmentation, no extensions. This is sufficient for the single CDP command/response exchange used here.</p>
+</section>
+
+<section id="usage">
+  <h2>Usage</h2>
+
+  <h3>Step 1: Start Chrome with Remote Debugging</h3>
+  <p>Fully quit Chrome (Cmd+Q). Then launch with a temp profile — Chrome 149+ requires <code>--user-data-dir</code> pointing to a non-default directory for security:</p>
+  <pre><code>/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/chrome-cdp-session \
+  --remote-allow-origins='*'</code></pre>
+  <p>This launches a <strong>separate Chrome window</strong> with a fresh profile. Your main Chrome windows are untouched. The temp profile at <code>/tmp/chrome-cdp-session/</code> stores session data for this debug instance only — delete it when you're done.</p>
+  <p><strong>Why three flags:</strong></p>
+  <ul>
+    <li><code>--remote-debugging-port=9222</code> — enables the CDP HTTP/WebSocket server.</li>
+    <li><code>--user-data-dir=/tmp/chrome-cdp-session</code> — Chrome 149+ refuses to enable debugging on the default profile (<em>"DevTools remote debugging requires a non-default data directory"</em>).</li>
+    <li><code>--remote-allow-origins='*'</code> — Chrome 149+ validates the WebSocket <code>Origin</code> header. Without this, the script's connection is rejected with HTTP 403 (<em>"Rejected an incoming WebSocket connection from the http://localhost:9222 origin"</em>).</li>
+  </ul>
+  <p><strong>Verify the port is open</strong> before proceeding:</p>
+  <pre><code>curl -s http://localhost:9222/json | python3 -c "import sys,json; print(f'{len(json.load(sys.stdin))} tabs open')"</code></pre>
+
+  <h3>Step 2: Sign In to Target Sites</h3>
+  <p>Navigate to each site you want to extract cookies from and sign in:</p>
+  <ul>
+    <li><code>linkedin.com</code> — sign in, verify you can see your feed or jobs page</li>
+    <li><code>wellfound.com</code> — sign in, verify you can browse job listings</li>
+  </ul>
+
+  <h3>Step 3: Run the Export Script</h3>
+  <pre><code>cd .opencode/skills/job-scraper
+python3 cookies/export_chrome_cdp.py linkedin.com &gt; cookies/linkedin.json
+python3 cookies/export_chrome_cdp.py wellfound.com &gt; cookies/wellfound.json</code></pre>
+
+  <h3>Step 4: Verify Output</h3>
+  <pre><code>head -5 cookies/linkedin.json
+# Should show JSON array with li_at, JSESSIONID, etc.
+
+python3 -c "import json; d=json.load(open('cookies/linkedin.json')); print(f'{len(d)} cookies, httpOnly: {sum(1 for c in d if c[\"httpOnly\"])}')"
+# Should show httpOnly count > 0 (li_at is httpOnly)</code></pre>
+
+  <h3>Step 5: Resume Normal Chrome</h3>
+  <p>Close Chrome and reopen normally (without the <code>--remote-debugging-port</code> flag). Cookies are now stored in <code>cookies/</code> and ready for the scraper pipeline.</p>
+</section>
+
+<section id="security">
+  <h2>Security Analysis</h2>
+
+  <table>
+    <thead><tr><th>Concern</th><th>Assessment</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Extension supply chain attack</td>
+        <td><strong>Eliminated.</strong> No browser extensions are used. The script is in-repo and owned end-to-end.</td>
+      </tr>
+      <tr>
+        <td>Keychain access scope</td>
+        <td><strong>Eliminated.</strong> CDP does not access Keychain. The script communicates directly with Chrome's debug protocol on localhost.</td>
+      </tr>
+      <tr>
+        <td>Cookie exfiltration risk</td>
+        <td><strong>Minimized.</strong> The script writes to stdout — the user pipes it to a gitignored file. No network requests leave localhost.</td>
+      </tr>
+      <tr>
+        <td>Debug port exposure</td>
+        <td><strong>Acceptable.</strong> Chrome binds the debug port to <code>127.0.0.1</code> only. No external network access is possible. The port is closed when Chrome exits.</td>
+      </tr>
+      <tr>
+        <td>Cookie file at rest</td>
+        <td><strong>Gitignored.</strong> <code>cookies/.gitignore</code> excludes all <code>*.json</code> files. Cookies are on the local filesystem only.</td>
+      </tr>
+      <tr>
+        <td>Script integrity</td>
+        <td><strong>Repo-owned.</strong> The script is committed to the repository. No third-party code executes during cookie extraction.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Comparison to alternatives:</strong></p>
+  <table>
+    <thead><tr><th>Approach</th><th>Extensions</th><th>Keychain</th><th>httpOnly</th><th>Dependencies</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td>EditThisCookie extension</td><td>Yes (risk)</td><td>No</td><td>No</td><td>Browser ext</td><td>Rejected — extension supply chain</td></tr>
+      <tr><td>SQLite + Keychain decrypt</td><td>No</td><td>Yes (risk)</td><td>Yes</td><td>pycryptodome</td><td>Rejected — Keychain access, pip dep</td></tr>
+      <tr><td>Console <code>document.cookie</code></td><td>No</td><td>No</td><td>No</td><td>None</td><td>Rejected — can't get li_at</td></tr>
+      <tr><td><strong>CDP script (chosen)</strong></td><td>No</td><td>No</td><td>Yes</td><td>None (stdlib)</td><td>Accepted</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="edge-cases">
+  <h2>Edge Cases &amp; Troubleshooting</h2>
+
+  <dl>
+    <dt>Port not open — "requires a non-default data directory" (Chrome 149+)</dt>
+    <dd><strong>This is the definitive diagnostic for Chrome 149+ on macOS.</strong> Chrome prints this message to the terminal on launch and silently refuses to bind the debug port. The fix is <code>--user-data-dir=/tmp/chrome-cdp-session</code>. Run diagnostics:
+    <pre><code># Check if port is bound
+curl -s http://localhost:9222/json
+# If "Connection refused" and Chrome printed the warning above:
+# restart with --user-data-dir=/tmp/chrome-cdp-session</code></pre></dd>
+
+    <dt>Chrome already running (session conflict)</dt>
+    <dd>The debug port and temp profile must be specified at Chrome launch time. If Chrome is already open, Cmd+Q to fully quit, then launch with both flags. The temp profile window is independent — your main Chrome profile is not affected.</dd>
+
+    <dt>Port conflict with another process</dt>
+    <dd>If port 9222 is in use by another process, change the port: <code>--remote-debugging-port=9223</code> and pass <code>--port=9223</code> to the script. The script currently defaults to port 9222.</dd>
+
+    <dt>No tabs match the domain</dt>
+    <dd>The script searches open tabs for a URL containing the target domain. If no tab is on linkedin.com, the script uses the first available tab but the <code>Network.getCookies</code> response may be incomplete. Open a tab to the target site before running the script.</dd>
+
+    <dt>Empty cookie output</dt>
+    <dd>Verify you are signed in to the site in that Chrome session. CDP reads live cookies from the browser process — if you signed in on a different Chrome profile or before restarting with the debug flag, the session may not be active.</dd>
+
+    <dt>WebSocket handshake failure</dt>
+    <dd>Ensure Chrome was started with <code>--remote-debugging-port=9222</code> (not a different port). Verify with <code>curl http://localhost:9222/json</code> — should return a JSON array of tabs.</dd>
+
+    <dt>Script syntax warning</dt>
+    <dd>The script uses <code>r"""..."""</code> raw docstrings to avoid Python escape sequence warnings on filesystem paths containing backslashes.</dd>
+  </dl>
+</section>
+
+<section id="future">
+  <h2>Future Considerations</h2>
+  <ul>
+    <li><strong>Transport evaluation history:</strong> During Sprint 1 we evaluated four CDP transport approaches on Chrome 149 macOS: TCP with <code>--remote-debugging-address</code> (failed — port not bound on default profile), Unix domain sockets via <code>--remote-debugging-socket-name</code> (failed — requires <code>--headless</code>), <code>--remote-debugging-pipe</code> subprocess mode (rejected — ties Chrome lifecycle to Python process), and TCP with <code>--user-data-dir</code> temp profile (accepted — the only combination that works on Chrome 149).</li>
+    <li><strong>Temp profile cleanup:</strong> The script doesn't manage the temp profile. Delete <code>/tmp/chrome-cdp-session/</code> manually after use. Future versions could auto-delete on script exit.</li>
+    <li><strong>Multi-profile support:</strong> The script currently connects to whatever Chrome instance is running on port 9222. If the candidate uses multiple Chrome profiles, the script can be extended to enumerate profiles via <code>/json/list</code>.</li>
+    <li><strong>Firefox support:</strong> Firefox also supports CDP via <code>--remote-debugging-port</code>. The same script works with Firefox if it exposes the CDP-compatible endpoint. This is not yet tested.</li>
+    <li><strong>Cookie refresh automation:</strong> In the future, a scheduled GitHub Actions workflow could prompt the candidate to refresh cookies via a reminder, but automatic refresh is not possible without stored credentials (which we deliberately avoid).</li>
+    <li><strong>WebSocket keep-alive:</strong> If multiple CDP commands are needed in future scripts, ping/pong frame handling should be added to the stdlib WebSocket implementation.</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.1-obscura-job-search-pipeline</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 1: Search Coverage Expansion</a>
+  <span aria-hidden="true"> / </span>
+  <a href="sprint.html">Sprint 1: Cookie Injection &amp; Authenticated Boards</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Corollary: Cookie Export via CDP</span>
+</nav>
+
+</article>
+
+</body>
+</html>

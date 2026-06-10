@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sqlite-api
+  namespace: job-search
+  labels:
+    app: sqlite-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sqlite-api
+  template:
+    metadata:
+      labels:
+        app: sqlite-api
+    spec:
+      containers:
+      - name: sqlite-api
+        image: job-search-db:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DB_PATH
+          value: /data/job-search.db
+        volumeMounts:
+        - name: db-storage
+          mountPath: /data
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: db-storage
+        persistentVolumeClaim:
+          claimName: job-search-db-pvc

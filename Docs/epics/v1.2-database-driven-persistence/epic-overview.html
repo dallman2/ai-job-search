@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Epic Overview: v1.2-database-driven-persistence</title>
+<link rel="stylesheet" href="../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="epic-overview" data-epic="v1.2-database-driven-persistence" data-status="completed">
+
+<header>
+  <h1>Epic Overview: v1.2-database-driven-persistence</h1>
+</header>
+
+<section id="vision">
+  <h2>Epic Vision</h2>
+  <p>Replace the flat-file persistence layer (<code>seen_jobs.json</code> + <code>job_search_tracker.csv</code>) with a <strong>SQLite database served via a containerized HTTP API on kind</strong>. The current JSON/CSV approach has served 71 tracked jobs well, but it has hit structural limits: no ad-hoc querying, no schema enforcement, two disconnected data silos that can't be joined, and an upskill workflow crippled by reading from an empty CSV while the real data sits in a separate JSON file.</p>
+  <p>The core directive: <strong>unify jobs and applications into a single relational schema, expose it via a simple REST API, and run the whole thing as a kind-deployed Docker container alongside the existing Obscura MCP server</strong>. Full-text search via SQLite FTS5, UNIQUE constraints for robust deduplication, and a thin <code>db/client.py</code> CLI that the AI assistant uses instead of raw file I/O.</p>
+  <p>Success means the user types "scrape jobs fast" and every job lands in a queryable database. The upskill skill analyzes all applied jobs at once. Ad-hoc questions like "show me all high-fit Anthropic jobs" are a single API call, not a Python dictionary scan.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th></tr></thead>
+      <tbody>
+        <tr><td>D1</td><td>Design database schema: unified <code>jobs</code> table replacing both <code>seen_jobs.json</code> and <code>job_search_tracker.csv</code>, plus <code>scrape_runs</code> and <code>job_skills</code> tables</td></tr>
+        <tr><td>D2</td><td>Build Python/FastAPI SQLite API container: CRUD endpoints for jobs, scrape runs, full-text search, aggregate stats</td></tr>
+        <tr><td>D3</td><td>Build <code>db/client.py</code> CLI — zero-dependency (stdlib <code>urllib</code>) wrapper for the AI assistant to query and mutate the database</td></tr>
+        <tr><td>D4</td><td>Deploy SQLite API on a local kind cluster with PersistentVolume (hostPath via <code>extraMounts</code>) so the DB file survives cluster teardown</td></tr>
+        <tr><td>D5</td><td>Write <code>db/migrate.py</code> to import all 71 jobs from <code>seen_jobs.json</code> into the SQLite database via the API</td></tr>
+        <tr><td>D6</td><td>Update <code>job-scraper/SKILL.md</code>: replace all JSON file I/O (~25 references) with <code>db/client.py</code> API calls</td></tr>
+        <tr><td>D7</td><td>Fix <code>upskill/SKILL.md</code>: switch data source from empty CSV to the database, fix <code>fit_rating</code> semantics (enum vs. numeric)</td></tr>
+        <tr><td>D8</td><td>Add <code>--api-url</code> flag to <code>cdp_search.py</code> for optional direct DB insertion (applies to all subcommands: <code>linkedin</code>, <code>wellfound</code>, <code>indeed</code>)</td></tr>
+        <tr><td>D9</td><td>Add FTS5 full-text search with automatic trigger-based index maintenance</td></tr>
+        <tr><td>D10</td><td>End-to-end integration test: scrape → store → query → evaluate → transition status → upskill</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope (Deferred)</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Feature</th><th>Rationale</th></tr></thead>
+      <tbody>
+        <tr><td>O1</td><td>Web UI or dashboard for job data</td><td>Separate epic; CLI output and API are sufficient for v1.2</td></tr>
+        <tr><td>O2</td><td>Migrate Obscura to kind</td><td>Obscura MCP server stays as plain <code>docker run</code> for stdio transport compatibility; only the database moves to kind</td></tr>
+        <tr><td>O3</td><td>PostgreSQL or MongoDB backend</td><td>SQLite is the correct tool for a single-user local workload; migrating to a client-server DB would add complexity without benefit at this scale</td></tr>
+        <tr><td>O4</td><td>Database replication or backups</td><td>The DB file lives on the Mac filesystem via <code>extraMounts</code>; standard macOS backup (Time Machine, iCloud) covers it</td></tr>
+        <tr><td>O5</td><td>Automated skill extraction from job descriptions</td><td>LLM-driven extraction during scrape/evaluation is sufficient; a structured skill taxonomy is future work</td></tr>
+        <tr><td>O6</td><td>Scheduled CRON scraping</td><td>Already deferred in v1.1; database backend doesn't change this</td></tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+
+<section id="architecture">
+  <h2>Architecture</h2>
+
+  <h3>Before (Flat Files)</h3>
+  <pre><code>seen_jobs.json (71 jobs, flat dict keyed by composite dedup string)
+     &darr; manual Python dict scans for all queries
+job_search_tracker.csv (empty, disconnected silo)
+     &darr; upskill reads CSV (empty!), ignores JSON (71 jobs)
+
+No schema enforcement:
+- 22 entries missing "source" field
+- 18 entries with empty "company"
+- fit_rating is "high"/"medium"/"low" in JSON, "0-100" in upskill spec
+- Dedup is ad-hoc Python string construction</code></pre>
+
+  <h3>After (SQLite via kind)</h3>
+  <pre><code>Mac filesystem: ./data/  ──extraMounts──→  kind node: /kind-host-data/
+                                                        │
+                                                 PV (hostPath)
+                                                        │
+  ┌─────────────────────────────────────────────────────────┐
+  │  kind cluster (job-search-local)                         │
+  │                                                          │
+  │  ┌──────────────────────────────────────────────────┐   │
+  │  │  Pod: sqlite-api                                  │   │
+  │  │  Container: python:3.12-slim + FastAPI            │   │
+  │  │  Port: 8000                                       │   │
+  │  │  Volume: PVC → /data (job-search.db)              │   │
+  │  └──────────────────────────────────────────────────┘   │
+  │                    │                                     │
+  │  Service: sqlite-api (NodePort 30080 → localhost)        │
+  └──────────────────────────────────────────────────────────┘
+         │
+         │ localhost:30080
+         ▼
+  ┌─────────────────────┐    ┌──────────────────────────┐
+  │  db/client.py        │    │  Claude Code / AI        │
+  │  (stdlib urllib)     │    │  bash: python3 db/       │
+  │  health | jobs |     │    │  client.py jobs list     │
+  │  scrape-runs | stats │    │  --status new ...        │
+  └─────────────────────┘    └──────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │  Unified Schema (SQLite)                                  │
+  │                                                          │
+  │  jobs (id, url UNIQUE, title, company, source,           │
+  │        location, salary, description_md, description_text│
+  │        fit_rating, status, evaluation_score,             │
+  │        first_seen, last_updated, applied_date,           │
+  │        notes, dedup_key, created_at)                     │
+  │                                                          │
+  │  jobs_fts (FTS5 on title, company, desc, location)        │
+  │  scrape_runs (id, run_date, mode, strategies, ...)        │
+  │  job_skills (job_id FK, skill)                           │
+  └─────────────────────────────────────────────────────────┘</code></pre>
+
+  <h3>Key Design Decisions</h3>
+  <table>
+    <thead><tr><th>Decision</th><th>Rationale</th></tr></thead>
+    <tbody>
+      <tr><td>SQLite, not PostgreSQL</td><td>Zero-dependency (Python stdlib). File-based, single-user, no server process. Perfect fit for &lt; 1000 records.</td></tr>
+      <tr><td>FastAPI HTTP wrapper, not raw sqlite3</td><td>SQLite has no network protocol. The API wrapper makes it a "database container" that the AI can query via curl or urllib from any process.</td></tr>
+      <tr><td>kind, not docker-compose</td><td>User preference; matches work infrastructure patterns. kind gives us PersistentVolumes, health probes, and declarative manifests without a separate orchestrator.</td></tr>
+      <tr><td>Obscura stays as <code>docker run</code></td><td>Obscura uses stdio transport for MCP. Moving it to kind would break stdin/stdout communication. Only the database moves to kind.</td></tr>
+      <tr><td>HostPath via <code>extraMounts</code></td><td>The DB file lives on the Mac filesystem (<code>./data/job-search.db</code>), surviving kind cluster teardown. Standard macOS backup covers it.</td></tr>
+      <tr><td>FTS5 for full-text search</td><td>Built into SQLite. Triggers keep the index in sync automatically. Enables queries like "kubernetes AND agentic" against job descriptions.</td></tr>
+      <tr><td><code>evaluation_score</code> column (0-100)</td><td>Separate from <code>fit_rating</code> (enum). The scraper's rapid score sets <code>fit_rating</code>. The full 5-dimension evaluation sets <code>evaluation_score</code>. Upskill uses <code>evaluation_score</code> for weighted gap analysis.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="phase-structure">
+  <h2>Phase Structure</h2>
+
+  <table>
+    <thead>
+      <tr><th>Phase</th><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td rowspan="3"><a href="phase-0/">Phase 0</a></td>
+        <td><a href="phase-0/sprint-0-sqlite-api-container/sprint.html">Sprint 0</a></td>
+        <td>SQLite API Container</td>
+        <td data-status="completed">Completed</td>
+        <td>&mdash;</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-1-kind-deployment/sprint.html">Sprint 1</a></td>
+        <td>kind Deployment &amp; Persistence</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-0/sprint-2-data-migration/sprint.html">Sprint 2</a></td>
+        <td>Data Migration</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 1</td>
+      </tr>
+      <tr>
+        <td rowspan="3"><a href="phase-1/">Phase 1</a></td>
+        <td><a href="phase-1/sprint-0-scraper-skill-update/sprint.html">Sprint 0</a></td>
+        <td>Scraper Skill Update</td>
+        <td data-status="completed">Completed</td>
+        <td>Phase 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-1/sprint-1-upskill-data-fix/sprint.html">Sprint 1</a></td>
+        <td>Upskill Data Fix</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="phase-1/sprint-2-end-to-end-integration/sprint.html">Sprint 2</a></td>
+        <td>End-to-End Integration Test &amp; Cleanup</td>
+        <td data-status="completed">Completed</td>
+        <td>Sprint 1</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="conventions">
+  <h2>Conventions</h2>
+  <ol>
+    <li>The SQLite database file is stored at <code>./data/job-search.db</code> on the Mac host filesystem, not inside the container's ephemeral filesystem</li>
+    <li>All API communication goes through <code>db/client.py</code> — the AI assistant never calls <code>curl</code> directly or uses raw sqlite3</li>
+    <li>The <code>db/client.py</code> CLI uses only Python stdlib (<code>urllib.request</code>, <code>json</code>) — zero pip dependencies</li>
+    <li>Schema migrations are additive (<code>ALTER TABLE ADD COLUMN</code>); the API auto-runs <code>schema.sql</code> on first start if the DB file is absent</li>
+    <li><code>seen_jobs.json</code> and <code>job_search_tracker.csv</code> are archived (renamed to <code>.bak</code>), not deleted, until Phase 1 Sprint 2 confirms the migration</li>
+    <li><code>data/</code> is added to <code>.gitignore</code> — job data is personal and should never be committed</li>
+    <li>AI tooling references in generated CVs/cover letters continue to reference "opencode" by name (v1.0 convention, unchanged)</li>
+    <li>The kind cluster name is <code>job-search-local</code>; the namespace is <code>job-search</code>; the service is <code>sqlite-api</code></li>
+  </ol>
+</section>
+
+<section id="risks">
+  <h2>Risk Registry</h2>
+  <table>
+    <thead><tr><th>ID</th><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>R1</td>
+        <td>kind cluster deleted → DB lost</td>
+        <td data-status="medium">Medium</td>
+        <td data-status="high">High</td>
+        <td><code>extraMounts</code> maps <code>./data/</code> to the kind node; DB file lives on Mac filesystem. Cluster teardown does not delete it.</td>
+      </tr>
+      <tr>
+        <td>R2</td>
+        <td>FTS5 content sync drift</td>
+        <td data-status="low">Low</td>
+        <td data-status="medium">Medium</td>
+        <td>AFTER INSERT/UPDATE/DELETE triggers keep FTS index in lockstep with the <code>jobs</code> table. Standard SQLite pattern, well-tested.</td>
+      </tr>
+      <tr>
+        <td>R3</td>
+        <td>API container not running during scrape</td>
+        <td data-status="medium">Medium</td>
+        <td data-status="high">High</td>
+        <td>Scraper skill checks <code>python3 db/client.py health</code> before starting. If unreachable, reports the issue and aborts with instructions to start the cluster.</td>
+      </tr>
+      <tr>
+        <td>R4</td>
+        <td>Docker image build takes too long / fails on Mac</td>
+        <td data-status="low">Low</td>
+        <td data-status="medium">Medium</td>
+        <td>Minimal Dockerfile: <code>python:3.12-slim</code> base, two pip packages, one COPY. Build time &lt; 30 seconds on first build.</td>
+      </tr>
+      <tr>
+        <td>R5</td>
+        <td>Kind cluster port conflicts with existing services</td>
+        <td data-status="low">Low</td>
+        <td data-status="low">Low</td>
+        <td>NodePort 30080 is a non-standard port. Verified no conflicts with existing containers (8080, 3000, 5432, 6379 in use by work projects).</td>
+      </tr>
+      <tr>
+        <td>R6</td>
+        <td>Migration script corrupts or loses data</td>
+        <td data-status="low">Low</td>
+        <td data-status="high">High</td>
+        <td><code>seen_jobs.json</code> is archived (not deleted) before migration. Migration is additive. Row count and spot-checks are verified post-migration.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="acceptance">
+  <h2>Epic Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> <code>python3 db/client.py health</code> returns <code>{"status": "ok"}</code> when the kind cluster is running</li>
+    <li><input type="checkbox"> All 71 jobs from <code>seen_jobs.json</code> are queryable via <code>python3 db/client.py jobs list</code></li>
+    <li><input type="checkbox"> <code>python3 db/client.py jobs search --q "kubernetes agentic"</code> returns FTS5 matches across title, company, and description</li>
+    <li><input type="checkbox"> Inserting a job with a duplicate URL returns HTTP 409 and a clear error message</li>
+    <li><input type="checkbox"> "scrape jobs fast" runs without referencing <code>seen_jobs.json</code> or <code>job_search_tracker.csv</code></li>
+    <li><input type="checkbox"> New scraped jobs appear in the database with correct fields and can be queried immediately</li>
+    <li><input type="checkbox"> Evaluating a job (status: new → evaluated) updates the database and persists across scraper runs</li>
+    <li><input type="checkbox"> Marking a job as applied (status: applied) sets <code>applied_date</code> and <code>notes</code> in a single UPDATE</li>
+    <li><input type="checkbox"> <code>python3 db/client.py stats</code> returns accurate aggregate counts by status, fit_rating, source, and company</li>
+    <li><input type="checkbox"> The upskill skill successfully queries applied jobs and produces a gap heatmap (not an empty report)</li>
+    <li><input type="checkbox"> The kind cluster can be torn down and recreated without data loss (DB file on <code>./data/</code>)</li>
+    <li><input type="checkbox"> No regressions in CV/cover letter generation or interview prep (job-application-assistant unchanged)</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../index.html">Epics</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">v1.2-database-driven-persistence</span>
+</nav>
+
+</article>
+
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 0 — v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="phase-index" data-epic="v1.0-opencode-migration" data-phase="0" data-status="active">
+
+<header>
+  <h1>Phase 0: Foundation &mdash; Repo Restructuring &amp; Idiom Removal</h1>
+  <p>Remove every trace of Claude Code from the file system and instruction language. This is the dependency-free foundation every subsequent phase builds on.</p>
+</header>
+
+<section>
+  <h2>Sprints</h2>
+  <table>
+    <thead>
+      <tr><th>Sprint</th><th>Name</th><th>Status</th><th>Depends On</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="sprint-0-repo-restructuring/sprint.html">Sprint 0</a></td>
+        <td>Repository Restructuring</td>
+        <td data-status="active">Active</td>
+        <td>&mdash;</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-1-idiom-stripping/sprint.html">Sprint 1</a></td>
+        <td>Idiom Stripping</td>
+        <td data-status="active">Active</td>
+        <td>Sprint 0</td>
+      </tr>
+      <tr>
+        <td><a href="sprint-2-opencode-configuration/sprint.html">Sprint 2</a></td>
+        <td>opencode.json Configuration</td>
+        <td data-status="active">Active</td>
+        <td>Sprint 0</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Phase Goal</h2>
+  <p>By the end of Phase 0, the repo must be physically and linguistically clean of Claude Code conventions. <code>.claude/</code> is gone. <code>.opencode/</code> contains all skill files with their content structurally identical but idiomatically stripped. <code>opencode.json</code> exists with permissions and subagent stubs. No instruction file references Claude, Claude Code, <code>$ARGUMENTS</code>, <code>allowed-tools</code>, <code>WebSearch</code>, or manual context management.</p>
+  <p>Zero logic changes happen in this phase &mdash; all existing workflows, frameworks, and templates remain functional. This is a pure rename/cleanup phase.</p>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../index.html">v1.0-opencode-migration</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Phase 0: Foundation</span>
+</nav>
+
+</article>
+
+</body>
+</html>

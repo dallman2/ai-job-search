@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 0: SQLite API Container — Phase 0 — v1.2-database-driven-persistence</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.2-database-driven-persistence" data-phase="0" data-sprint="0" data-status="completed">
+
+<header>
+  <h1>Sprint 0: SQLite API Container</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 0</span>
+    <span>Depends on: &mdash;</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Build a Docker container that wraps SQLite behind a FastAPI HTTP interface. Define the database schema in <code>schema.sql</code> (unified <code>jobs</code> table, <code>scrape_runs</code>, <code>job_skills</code>, FTS5 index). Implement CRUD endpoints for jobs and scrape runs, plus full-text search and aggregate stats. Build <code>db/client.py</code> — a zero-dependency CLI that the AI assistant uses to interact with the API. Test locally with <code>docker run</code> before moving to kind.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>SQLite is an embedded database — it has no network protocol. To run it as a "database container" accessible from other processes (the AI assistant, <code>cdp_search.py</code>, the upskill analysis), we need a thin HTTP wrapper. FastAPI is ideal: mature, fast, and the Python <code>sqlite3</code> module is in the standard library, so the only pip dependencies are <code>fastapi</code> and <code>uvicorn</code>.</p>
+  <p>The <code>db/client.py</code> CLI is the bridge between the AI assistant and the API. Rather than teaching the assistant to construct <code>curl</code> commands (which requires escaping JSON, handling HTTP errors, etc.), the CLI provides subcommands with standard <code>--flag</code> arguments. It uses only Python stdlib (<code>urllib.request</code>, <code>json</code>, <code>argparse</code>) so it runs anywhere Python 3 is installed.</p>
+  <p>The schema is designed to be a strict superset of the existing data: every field from <code>seen_jobs.json</code> plus the <code>job_search_tracker.csv</code> columns (<code>applied_date</code>, <code>notes</code>) are folded into a single <code>jobs</code> table. New columns (<code>evaluation_score</code>, <code>description_text</code>) are added for future use. FTS5 provides full-text search with automatic trigger-based index maintenance.</p>
+</section>
+
+<section id="files-to-create">
+  <h2>Files to Create</h2>
+  <table>
+    <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>db/Dockerfile</code></td><td>Python 3.12-slim base, installs requirements, copies source, exposes port 8000</td></tr>
+      <tr><td><code>db/requirements.txt</code></td><td><code>fastapi</code>, <code>uvicorn[standard]</code> — only two non-stdlib dependencies</td></tr>
+      <tr><td><code>db/schema.sql</code></td><td>Full DDL: <code>jobs</code>, <code>scrape_runs</code>, <code>job_skills</code> tables, FTS5 virtual table, sync triggers, indices. Uses <code>IF NOT EXISTS</code> for idempotent startup.</td></tr>
+      <tr><td><code>db/main.py</code></td><td>FastAPI application. On startup: run <code>schema.sql</code> if DB file absent. Endpoints: <code>/health</code>, <code>GET/POST /jobs</code>, <code>GET/PUT /jobs/{id}</code>, <code>GET /jobs/check</code> (dedup), <code>GET /jobs/search</code> (FTS5), <code>GET/POST /scrape-runs</code>, <code>GET /stats</code>. Uses context manager for connections with WAL mode and foreign keys.</td></tr>
+      <tr><td><code>db/client.py</code></td><td>Zero-dependency CLI. Subcommands: <code>health</code>, <code>jobs list|get|search|insert|update|check</code>, <code>scrape-runs list|log</code>, <code>stats</code>. Uses <code>argparse</code> + <code>urllib.request</code>. Base URL configurable via <code>--api-url</code> or <code>API_URL</code> env var (default: <code>http://localhost:30080</code>).</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Write the Database Schema</h3>
+  <ol>
+    <li data-task-id="0.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.1: Write schema.sql</strong>
+        <data data-files="db/schema.sql"></data>
+        <p>Create the full DDL. Key design points:</p>
+        <ul>
+          <li><code>jobs.url</code> has a <code>UNIQUE</code> constraint — this is the primary dedup mechanism</li>
+          <li><code>jobs.dedup_key</code> stores the normalized company+title for fallback dedup (constructed during insert)</li>
+          <li><code>jobs.fit_rating</code> has a <code>CHECK</code> constraint on the four valid enum values</li>
+          <li><code>jobs.status</code> has a <code>CHECK</code> constraint on the four lifecycle states</li>
+          <li><code>jobs_fts</code> is a content-sync FTS5 table referencing <code>jobs</code></li>
+          <li>Three triggers (<code>jobs_ai</code>, <code>jobs_ad</code>, <code>jobs_au</code>) keep FTS5 in sync</li>
+          <li><code>job_skills</code> has a composite PK and CASCADE delete on the FK</li>
+          <li>All <code>CREATE</code> statements use <code>IF NOT EXISTS</code> for idempotent startup</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Build the FastAPI Server</h3>
+  <ol>
+    <li data-task-id="0.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.2: Write main.py — app structure and DB connection</strong>
+        <data data-files="db/main.py"></data>
+        <p>FastAPI app with:</p>
+        <ul>
+          <li><code>get_db()</code> context manager: <code>sqlite3.connect(DB_PATH)</code>, <code>row_factory = sqlite3.Row</code>, <code>PRAGMA journal_mode=WAL</code>, <code>PRAGMA foreign_keys=ON</code>. Commit on success, rollback on exception.</li>
+          <li><code>DB_PATH</code> from <code>os.environ.get("DB_PATH", "/data/job-search.db")</code></li>
+          <li><code>@app.on_event("startup")</code> — if <code>DB_PATH</code> doesn't exist, run <code>schema.sql</code></li>
+          <li>Pydantic models: <code>JobCreate</code>, <code>JobUpdate</code>, <code>ScrapeRunCreate</code></li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="0.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.3: Implement endpoints — Health and Stats</strong>
+        <data data-files="db/main.py"></data>
+        <ul>
+          <li><code>GET /health</code> → <code>{"status": "ok", "db": "/data/job-search.db"}</code></li>
+          <li><code>GET /stats</code> → aggregate counts: total jobs, by status, by fit_rating, by source, by company (top 10). Uses <code>sqlite3.Row</code> → dict conversion.</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="0.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.4: Implement endpoints — Jobs CRUD</strong>
+        <data data-files="db/main.py"></data>
+        <ul>
+          <li><code>GET /jobs?status=new&fit_rating=high&source=linkedin&company=Anthropic&limit=50&offset=0</code> → build WHERE clause dynamically from query params. Map to list of dicts.</li>
+          <li><code>GET /jobs/{id}</code> → single job with full <code>description_md</code></li>
+          <li><code>POST /jobs</code> → insert new job. Auto-set <code>created_at</code>, <code>last_updated</code>. Return 409 Conflict if <code>url</code> already exists. Auto-generate <code>dedup_key</code> from normalized company+title.</li>
+          <li><code>PUT /jobs/{id}</code> → partial update. Only update fields present in the JSON body. Auto-update <code>last_updated</code>. Return 404 if not found.</li>
+          <li><code>GET /jobs/check?url=...&dedup_key=...</code> → lightweight dedup probe. Returns <code>{"exists": true/false, "job": {...}}</code> or <code>{"exists": false}</code>.</li>
+        </ul>
+      </div>
+    </li>
+    <li data-task-id="0.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.5: Implement endpoints — FTS5 Search and Scrape Runs</strong>
+        <data data-files="db/main.py"></data>
+        <ul>
+          <li><code>GET /jobs/search?q=kubernetes+agentic&limit=20</code> → FTS5 MATCH query against <code>jobs_fts</code>. Returns ranked results with snippets via <code>snippet()</code>.</li>
+          <li><code>GET /scrape-runs?limit=10</code> → list recent runs, newest first</li>
+          <li><code>POST /scrape-runs</code> → log a new scrape run. Auto-set <code>created_at</code>.</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Build the CLI Client</h3>
+  <ol>
+    <li data-task-id="0.6">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.6: Write client.py — subcommand structure and helpers</strong>
+        <data data-files="db/client.py"></data>
+        <p>CLI with <code>argparse</code> subcommands:</p>
+        <ul>
+          <li><code>health</code> → GET /health, print JSON</li>
+          <li><code>jobs list [--status STATUS] [--fit-rating RATING] [--source SRC] [--company NAME] [--limit N] [--offset N]</code> → GET /jobs with query params</li>
+          <li><code>jobs get ID</code> → GET /jobs/{id}, print JSON with description_md</li>
+          <li><code>jobs search --q "text" [--limit N]</code> → GET /jobs/search</li>
+          <li><code>jobs insert '{"url": "...", "title": "...", ...}'</code> → POST /jobs with JSON body from string</li>
+          <li><code>jobs update ID [--status STATUS] [--fit-rating RATING] [--applied-date DATE] [--notes NOTES] [--evaluation-score N]</code> → PUT /jobs/{id} with partial update</li>
+          <li><code>jobs check [--url URL] [--dedup-key KEY]</code> → GET /jobs/check</li>
+          <li><code>scrape-runs list [--limit N]</code> → GET /scrape-runs</li>
+          <li><code>scrape-runs log '{"mode": "fast", ...}'</code> → POST /scrape-runs</li>
+          <li><code>stats</code> → GET /stats, pretty-print as table</li>
+        </ul>
+        <p>Helper functions: <code>_api_url(path)</code> constructs the full URL from <code>--api-url</code> or <code>API_URL</code> env var. <code>_get(path)</code> / <code>_post(path, data)</code> / <code>_put(path, data)</code> use <code>urllib.request</code> with error handling (print HTTP status + body on error, exit 1).</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Containerize</h3>
+  <ol>
+    <li data-task-id="0.7">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.7: Write Dockerfile and requirements.txt</strong>
+        <data data-files="db/Dockerfile, db/requirements.txt"></data>
+        <pre><code>FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY main.py schema.sql ./
+RUN mkdir -p /data
+EXPOSE 8000
+ENV DB_PATH=/data/job-search.db
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]</code></pre>
+      </div>
+    </li>
+    <li data-task-id="0.8">
+      <input type="checkbox">
+      <div>
+        <strong>Task 0.8: Build Docker image and smoke test locally</strong>
+        <data data-files="db/"></data>
+        <p><code>docker build -t job-search-db:latest db/</code></p>
+        <p><code>docker run -d --name job-search-db-test -p 8000:8000 -v $(pwd)/data:/data job-search-db:latest</code></p>
+        <p>Verify:</p>
+        <ul>
+          <li><code>curl localhost:8000/health</code> → <code>{"status": "ok"}</code></li>
+          <li><code>curl localhost:8000/stats</code> → <code>{"total_jobs": 0, ...}</code></li>
+          <li><code>curl -X POST localhost:8000/jobs -H 'Content-Type: application/json' -d '{"url":"https://test.example/job/1","title":"Test Job","company":"TestCo","first_seen":"2026-06-09T00:00:00Z","last_updated":"2026-06-09T00:00:00Z","dedup_key":"testco_test-job"}'</code> → <code>{"id": 1, ...}</code></li>
+          <li><code>curl localhost:8000/jobs/1</code> → returns the inserted job</li>
+          <li><code>curl -X POST localhost:8000/jobs -H 'Content-Type: application/json' -d '{"url":"https://test.example/job/1",...}'</code> → HTTP 409 Conflict</li>
+          <li><code>curl "localhost:8000/jobs/search?q=test"</code> → returns the job</li>
+          <li><code>docker stop job-search-db-test && docker rm job-search-db-test</code></li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>API framework</td><td><a href="https://fastapi.tiangolo.com/">FastAPI</a> (Python)</td></tr>
+      <tr><td>ASGI server</td><td><a href="https://www.uvicorn.org/">Uvicorn</a></td></tr>
+      <tr><td>Database engine</td><td><a href="https://sqlite.org/">SQLite 3</a> (Python stdlib <code>sqlite3</code>)</td></tr>
+      <tr><td>Full-text search</td><td>SQLite FTS5 extension</td></tr>
+      <tr><td>Data validation</td><td><a href="https://docs.pydantic.dev/">Pydantic</a> (bundled with FastAPI)</td></tr>
+      <tr><td>Container base</td><td><code>python:3.12-slim</code> (Debian Bookworm)</td></tr>
+      <tr><td>Client CLI deps</td><td>Zero — <code>argparse</code> + <code>urllib.request</code> + <code>json</code> (all stdlib)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li><input type="checkbox"> <code>docker build -t job-search-db db/</code> succeeds without errors</li>
+    <li><input type="checkbox"> Container starts and <code>/health</code> returns <code>{"status": "ok"}</code></li>
+    <li><input type="checkbox"> <code>schema.sql</code> auto-runs on first start; subsequent restarts are idempotent (no duplicate table errors)</li>
+    <li><input type="checkbox"> <code>POST /jobs</code> inserts a record and returns it with auto-generated <code>id</code>, <code>created_at</code>, <code>dedup_key</code></li>
+    <li><input type="checkbox"> <code>POST /jobs</code> with duplicate URL returns HTTP 409 with clear error message</li>
+    <li><input type="checkbox"> <code>PUT /jobs/{id}</code> performs partial update (only provided fields change); <code>last_updated</code> auto-refreshes</li>
+    <li><input type="checkbox"> <code>GET /jobs/search?q=keyword</code> returns FTS5 matches ranked by relevance</li>
+    <li><input type="checkbox"> <code>GET /stats</code> returns accurate aggregate counts across all dimensions</li>
+    <li><input type="checkbox"> <code>POST /scrape-runs</code> logs a run; <code>GET /scrape-runs</code> lists them newest-first</li>
+    <li><input type="checkbox"> <code>db/client.py health</code> works from any directory with zero pip installs</li>
+    <li><input type="checkbox"> <code>db/client.py jobs insert '{"url": "...", ...}'</code> works with JSON string argument</li>
+    <li><input type="checkbox"> <code>db/client.py stats</code> prints a readable aggregate table</li>
+    <li><input type="checkbox"> DB file persists on host via volume mount; container restart does not lose data</li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.2-database-driven-persistence</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0: Infrastructure &amp; Data Layer</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 0: SQLite API Container</span>
+</nav>
+
+</article>
+
+</body>
+</html>

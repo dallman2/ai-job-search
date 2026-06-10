@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 1: Idiom Stripping — Phase 0 — v1.0-opencode-migration</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.0-opencode-migration" data-phase="0" data-sprint="1" data-status="completed">
+
+<header>
+  <h1>Sprint 1: Idiom Stripping</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 1</span>
+    <span>Depends on: Sprint 0</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Edit every instruction file to remove all six categories of Claude Code idiom. After this sprint, the repo content is <strong>model-agnostic instruction language</strong>: no Claude branding, no procedural step-rigidity, no manual context management, no <code>$ARGUMENTS</code>, no <code>allowed-tools</code> frontmatter, no <code>WebSearch</code>. The actual workflow logic remains intact &mdash; only <em>how</em> it's expressed changes.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>Six Claude Code idioms are embedded across ~20 instruction files. Each must be systematically removed:</p>
+  <ol>
+    <li><strong>Manual context management</strong> (~15 occurrences): "Do not re-read," "You already have X in context from Step 1," "Hold this content throughout." OpenAI models manage their own context. These instructions cause second-guessing and degrade reasoning.</li>
+    <li><strong>Step-rigid directives</strong>: "Follow these steps <em>exactly in order</em>," "Do not skip steps," "Never skip this step." OpenAI models reason dynamically. Procedural scripts over-constrain them.</li>
+    <li><strong><code>$ARGUMENTS</code> variable</strong>: Claude Code's slash-command variable injection. opencode has no equivalent. Models extract intent from conversation naturally.</li>
+    <li><strong>Claude branding</strong>: "Claude acts as," "a second Claude agent," "mention Claude Code by name." Replace with model-agnostic language.</li>
+    <li><strong><code>allowed-tools</code> frontmatter</strong>: Claude Code skill metadata. opencode manages permissions in <code>opencode.json</code>.</li>
+    <li><strong><code>context: fork</code> directive</strong>: Claude Code sandboxing feature. Not needed in opencode.</li>
+  </ol>
+  <p>The files being edited were moved in Sprint 0 and are now at their final locations. The content of profile files (01-07) and LaTeX guides (05, 06) is model-agnostic domain knowledge and remains structurally unchanged beyond removing Claude-specific references.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Strip manual context management from skill files, OPENDOC.md, and agent files</li>
+      <li>Remove all "exactly in order" and "do not skip" directives</li>
+      <li>Remove all <code>$ARGUMENTS</code> references and conditional logic based on them</li>
+      <li>Replace "Claude" / "Claude Code" with model-agnostic language or "opencode" where appropriate</li>
+      <li>Remove <code>allowed-tools</code> lines from all SKILL.md frontmatter blocks</li>
+      <li>Remove <code>context: fork</code> from <code>.agents/skills/</code> SKILL.md files</li>
+      <li>Remove "Token-efficiency rules" sections entirely</li>
+      <li>Remove "spawn a Claude agent" / "second Claude agent" &rarr; "subagent" or "reviewer agent"</li>
+      <li>Update "Agentic coding references mention Claude Code by name" &rarr; "mention opencode by name"</li>
+      <li>Update SETUP.md installation instructions from Claude Code to opencode</li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Rewriting skills into goal-oriented format (Phase 1)</li>
+      <li>Changing evaluation frameworks, writing rules, or template guides (they are domain content)</li>
+      <li>Modifying LaTeX templates</li>
+      <li>Rewriting the reviewer agent (Phase 1 Sprint 4)</li>
+      <li>Creating the actual reviewer subagent prompt (this sprint only strips old idioms; the new content comes in Phase 1)</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Strip OPENDOC.md (Main Instruction File)</h3>
+  <ol>
+    <li data-task-id="1.1">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.1: Clean OPENDOC.md</strong>
+        <data data-files="OPENDOC.md"></data>
+        <p>Edit <code>OPENDOC.md</code> to remove all Claude-specific language:</p>
+        <ul>
+          <li>"Claude acts as a career advisor" &rarr; "You act as a career advisor"</li>
+          <li>"Reference Claude Code by name" &rarr; "Reference opencode by name"</li>
+          <li>"Built with Claude Code" &rarr; "Built with opencode" (credits section)</li>
+          <li>Remove all slash-command references (<code>/setup</code>, <code>/apply</code>, <code>/scrape</code>, etc.) since opencode has no slash commands</li>
+          <li>The workflow description section (lines 85-92) must describe the <em>process</em> without assuming slash commands trigger it</li>
+          <li>The verification checklist (lines 94-128) stays intact &mdash; it is model-agnostic quality criteria</li>
+          <li>The repo structure section must update path references (<code>.claude/skills/</code> &rarr; <code>.opencode/skills/</code>)</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Strip Skill SKILL.md Files (3 files)</h3>
+  <ol>
+    <li data-task-id="1.2">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.2: Clean job-application-assistant SKILL.md</strong>
+        <data data-files=".opencode/skills/job-application-assistant/SKILL.md"></data>
+        <p>Remove <code>allowed-tools</code> from frontmatter. Remove "Claude" references. Simplify workflow description to remove step-rigidity while preserving the logical phases (evaluate, draft, review, verify). Remove assumption that workflow is triggered by slash command. Keep reference file table intact.</p>
+      </div>
+    </li>
+    <li data-task-id="1.3">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.3: Clean job-scraper SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Remove <code>allowed-tools</code>. Remove <code>$ARGUMENTS</code> references (optional arguments / "broad" focus area logic). Remove "Use the Agent tool or parallel WebSearch calls" &rarr; "Use subagents or parallel tool calls." Remove step-numbered rigidity. Keep deduplication logic, fit assessment, and output format.</p>
+      </div>
+    </li>
+    <li data-task-id="1.4">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.4: Clean upskill SKILL.md</strong>
+        <data data-files=".opencode/skills/upskill/SKILL.md"></data>
+        <p>Remove <code>allowed-tools</code>. Remove <code>$ARGUMENTS</code> from mode detection logic (URL argument parsing). Remove "Step 1 &rarr; Step 8" procedural structure. Remove <code>WebSearch</code> references (replace with <code>WebFetch</code> for resource discovery). Remove "Use the Write tool to save the file" &rarr; keep the file-save instruction but don't name the tool. Remove "Important Rules" numbered list rigidity.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Strip CLI Skill SKILL.md Files (4 files in .agents/skills/)</h3>
+  <ol>
+    <li data-task-id="1.5">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.5: Clean jobindex-search SKILL.md</strong>
+        <data data-files=".agents/skills/jobindex-search/SKILL.md"></data>
+        <p>Remove <code>context: fork</code>. Remove <code>allowed-tools</code>. These are CLI tool wrappers &mdash; their instruction content (how to use the tool, flags, examples) is model-agnostic and stays intact.</p>
+      </div>
+    </li>
+    <li data-task-id="1.6">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.6: Clean jobbank-search SKILL.md</strong>
+        <data data-files=".agents/skills/jobbank-search/SKILL.md"></data>
+        <p>Remove <code>context: fork</code>. Remove <code>allowed-tools</code>.</p>
+      </div>
+    </li>
+    <li data-task-id="1.7">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.7: Clean jobnet-search SKILL.md</strong>
+        <data data-files=".agents/skills/jobnet-search/SKILL.md"></data>
+        <p>Remove <code>context: fork</code>. Remove <code>allowed-tools</code>.</p>
+      </div>
+    </li>
+    <li data-task-id="1.8">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.8: Clean jobdanmark-search SKILL.md</strong>
+        <data data-files=".agents/skills/jobdanmark-search/SKILL.md"></data>
+        <p>Remove <code>context: fork</code>. Remove <code>allowed-tools</code>.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>4. Strip Profile Files (01-07, 7 files)</h3>
+  <ol>
+    <li data-task-id="1.9">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.9: Clean all profile reference files</strong>
+        <data data-files=".opencode/skills/job-application-assistant/01-candidate-profile.md .opencode/skills/job-application-assistant/02-behavioral-profile.md .opencode/skills/job-application-assistant/03-writing-style.md .opencode/skills/job-application-assistant/04-job-evaluation.md .opencode/skills/job-application-assistant/05-cv-templates.md .opencode/skills/job-application-assistant/06-cover-letter-templates.md .opencode/skills/job-application-assistant/07-interview-prep.md"></data>
+        <p>These files contain domain knowledge (evaluation frameworks, writing rules, template guides, STAR format). They have minimal Claude-specific content, but check each for:</p>
+        <ul>
+          <li><strong>03-writing-style.md line 80:</strong> "Any mention of agentic coding or AI tooling must reference <strong>Claude Code</strong> by name" &rarr; "opencode"</li>
+          <li><strong>05-cv-templates.md:</strong> Check for Claude-specific PDF verification references. The actual compile-and-inspect technique (lualatex, needspace, enlargethispage) is model-agnostic and stays.</li>
+          <li><strong>06-cover-letter-templates.md:</strong> Same check as 05.</li>
+          <li><strong>04-job-evaluation.md:</strong> Check for "Use WebFetch or WebSearch" &rarr; "Use WebFetch" (remove WebSearch reference)</li>
+          <li><strong>02-behavioral-profile.md:</strong> Minimal; likely no changes needed beyond placeholders.</li>
+          <li><strong>01-candidate-profile.md:</strong> Placeholder file; no changes needed.</li>
+          <li><strong>07-interview-prep.md:</strong> Check for Claude references in roleplay guidelines.</li>
+        </ul>
+      </div>
+    </li>
+  </ol>
+
+  <h3>5. Strip Agent File</h3>
+  <ol>
+    <li data-task-id="1.10">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.10: Clean gemini-research-expert.md</strong>
+        <data data-files=".opencode/agents/gemini-research-expert.md"></data>
+        <p>Remove Claude Code YAML frontmatter (<code>model: sonnet</code>, etc.). Remove "gemini" CLI references if the tool doesn't exist in opencode. The agent's research methodology section is good content; keep it. Note: this agent will be further rewritten in Phase 1 when defining subagents in <code>opencode.json</code>.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>6. Strip Documentation Files</h3>
+  <ol>
+    <li data-task-id="1.11">
+      <input type="checkbox" checked>
+      <div>
+        <strong>Task 1.11: Clean SETUP.md</strong>
+        <data data-files="SETUP.md"></data>
+        <p>Remove Claude Code installation instructions. Replace with opencode installation instructions. Remove all slash-command references (<code>/setup</code>, <code>/apply</code>, etc.). Replace Claude Code workflow examples with opencode equivalents. Keep LaTeX, Python, and Bun prerequisite instructions (they're tool-agnostic).</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Content editing</td><td>Edit tool (targeted string replacement)</td></tr>
+      <tr><td>Verification</td><td><code>rg</code> (ripgrep) for idiom detection</td></tr>
+      <tr><td>Files affected</td><td>~20 markdown files across <code>.opencode/</code>, <code>.agents/</code>, and repo root</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox" checked>
+      <span>Manual context management: <code>rg -i "do not re-read|you already have.*in context|hold this content|never re-read" .opencode/ .agents/ OPENDOC.md</code> returns zero matches</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>Step rigidity: <code>rg -i "follow these steps exactly|do not skip steps|never skip this step" .opencode/ .agents/ OPENDOC.md</code> returns zero matches</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>$ARGUMENTS</code>: <code>rg '\$ARGUMENTS' .opencode/ .agents/ OPENDOC.md SETUP.md</code> returns zero matches</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>Claude branding (as actor): <code>rg -i "claude acts as\|a second claude agent\|claude will\|claude can\|claude code acts\|spawn a claude" .opencode/ .agents/ OPENDOC.md</code> returns zero matches</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>allowed-tools</code>: <code>rg "allowed-tools" .opencode/skills/ .agents/skills/</code> returns zero matches</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span><code>context: fork</code>: <code>rg "context: fork" .agents/skills/</code> returns zero matches</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>Token efficiency rules: <code>rg -i "token-efficiency" .opencode/ .agents/ OPENDOC.md</code> returns zero matches</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>"Claude Code" tool name (as tool reference, not credits): <code>rg -i "claude code" .opencode/skills/ .agents/skills/ OPENDOC.md | rg -v "Built with\|Acknowledgements\|LICENSE"</code> returns zero matches</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>AI tooling references in writing guides: "mention opencode by name" (not "Claude Code") in 03-writing-style.md and 05-cv-templates.md</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>Profile file content integrity: evaluation frameworks, writing rules, template structures, and STAR format are unchanged beyond Claude &rarr; opencode swap</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>SETUP.md references opencode (not Claude Code) for installation and usage instructions</span>
+    </li>
+    <li>
+      <input type="checkbox" checked>
+      <span>No slash-command references (<code>/setup</code>, <code>/apply</code>, <code>/scrape</code>) remain as operational instructions (credits/acknowledgements section is OK)</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../index.html">v1.0-opencode-migration</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0: Foundation</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 1: Idiom Stripping</span>
+</nav>
+
+</article>
+
+</body>
+</html>

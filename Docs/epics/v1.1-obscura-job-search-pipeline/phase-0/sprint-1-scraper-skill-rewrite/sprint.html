@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprint 1: Scraper Skill Rewrite — Phase 0 — v1.1-obscura-job-search-pipeline</title>
+<link rel="stylesheet" href="../../../../css/docs-base.css">
+</head>
+<body>
+
+<article data-doc-type="sprint-plan" data-epic="v1.1-obscura-job-search-pipeline" data-phase="0" data-sprint="1" data-status="planned">
+
+<header>
+  <h1>Sprint 1: Scraper Skill Rewrite</h1>
+  <div class="meta">
+    <span>Phase: 0</span>
+    <span>Sprint: 1</span>
+    <span>Depends on: Sprint 0</span>
+  </div>
+</header>
+
+<section id="objective">
+  <h2>Objective</h2>
+  <p>Rewrite the <code>job-scraper</code> SKILL.md from its current Danish-focused, CLI-tool-based design into an SF-targeted, Obscura-powered skill that can autonomously search job boards, extract listings, deduplicate against previously seen jobs, rapid-score candidates, and present ranked results. Create the tracking infrastructure (<code>seen_jobs.json</code>, <code>job_search_tracker.csv</code>). Document board-specific extraction patterns. At the end of this sprint, "scrape jobs fast" returns deduplicated, rapid-scored job listings from live boards.</p>
+</section>
+
+<section id="rationale">
+  <h2>Rationale &amp; Context</h2>
+  <p>The current <code>job-scraper/SKILL.md</code> was written for a Danish job market context. It references CLI tools (<code>jobindex-search</code>, <code>jobbank-search</code>, <code>jobnet-search</code>, <code>jobdanmark-search</code>) that search Danish job boards. It assumes geographic filters for Copenhagen, Sj&aelig;lland, and Hovedstaden. None of this applies to the candidate's actual profile: San Francisco Bay Area, targeting frontier AI labs and AI-native infrastructure companies at Senior+ level.</p>
+  <p>The rewrite must keep the same skill structure (goal-oriented purpose, constraints, state management, search/process/output phases) but replace every Danish-specific reference with SF AI context. The CLI tools are replaced by Obscura MCP tools. The search scope shifts from Danish job portals to Greenhouse, Ashby, Wellfound, YC Jobs, and Google&rarr;LinkedIn.</p>
+  <p>Obscura provides roughly 12 MCP tools. The key ones for scraping are <code>browser_navigate</code> (navigate to a URL, with optional <code>waitUntil</code> for dynamic content), <code>browser_snapshot</code> (return current page URL, title, and body text), and <code>browser_evaluate</code> (execute arbitrary JavaScript). For pagination and interaction: <code>browser_click</code>, <code>browser_wait_for</code>. The skill should describe <em>what</em> to do (navigate to search results, extract listing URLs) without prescribing <em>exactly how</em> to do it &mdash; the LLM reasons about tool selection dynamically.</p>
+  <p>Deduplication uses two data stores: <code>seen_jobs.json</code> (all jobs ever fetched, keyed by URL or company+title, with status: <code>new</code>/<code>skipped</code>/<code>evaluated</code>/<code>applied</code>) and <code>job_search_tracker.csv</code> (a log of actually-applied jobs). Both must be created with empty initial states.</p>
+</section>
+
+<section id="scope">
+  <h2>Scope</h2>
+
+  <section id="in-scope">
+    <h3>In-Scope</h3>
+    <ul>
+      <li>Rewrite <code>.opencode/skills/job-scraper/SKILL.md</code> from Danish CLI-tool design to SF Obscura-powered design</li>
+      <li>Remove all references to <code>jobindex-search</code>, <code>jobbank-search</code>, <code>jobnet-search</code>, <code>jobdanmark-search</code></li>
+      <li>Replace with Obscura MCP tool references (<code>browser_navigate</code>, <code>browser_snapshot</code>, <code>browser_evaluate</code>, <code>browser_click</code>, <code>browser_wait_for</code>)</li>
+      <li>Update geographic filter from Danish regions to SF Bay Area (SF, Peninsula, East Bay; borderline San Jose)</li>
+      <li>Update role filter to Senior+ (Senior, Staff, Lead, Principal, Founding), skip mid-level and junior</li>
+      <li>Add "fast" mode (priority 1-3 queries) and "deep" mode (all 5 priority tiers)</li>
+      <li>Add "new" mode (diff against <code>last_run</code> timestamp in <code>seen_jobs.json</code>)</li>
+      <li>Create <code>job_scraper/seen_jobs.json</code> with initial state: <code>{"seen": {}, "last_run": null}</code></li>
+      <li>Create <code>job_search_tracker.csv</code> with empty template (columns: company, role, date_applied, status, notes)</li>
+      <li>Document per-board extraction patterns (see Task 1.3)</li>
+      <li>Implement dedup logic: compound key is URL (primary) or normalized company+title (fallback)</li>
+      <li>Implement rapid fit scoring: High (primary skills hit + Senior+ + SF/remote), Medium (secondary skills), Low (no match or deal-breaker)</li>
+      <li>Add Google search queries for LinkedIn public postings to <code>search-queries.md</code></li>
+    </ul>
+  </section>
+
+  <section id="out-of-scope">
+    <h3>Out-of-Scope</h3>
+    <ul>
+      <li>Full 5-dimension evaluation handoff (Sprint 2)</li>
+      <li>Ranked output table format (Sprint 2)</li>
+      <li>Error resilience for batch failures (Sprint 3)</li>
+      <li>Modifying the existing <code>.agents/skills/</code> CLI tools (they remain for Danish use but won't be called)</li>
+      <li>Adding LinkedIn authenticated search</li>
+      <li>Auto-apply or CV/cover letter generation (handled by job-application-assistant, unchanged)</li>
+    </ul>
+  </section>
+</section>
+
+<section id="execution-plan">
+  <h2>Execution Plan</h2>
+
+  <h3>1. Create Tracking Infrastructure</h3>
+  <ol>
+    <li data-task-id="1.1">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.1: Create seen_jobs.json</strong>
+        <data data-files="job_scraper/seen_jobs.json"></data>
+        <p>Create <code>job_scraper/seen_jobs.json</code> with initial state. Schema: <code>{"seen": {}} (empty object, keys are compound dedup keys). <code>last_run</code> field: <code>null</code> initially, updated to ISO timestamp after each scrape run. Each seen entry: <code>{title, company, url, first_seen, status, fit_rating}</code>.</p>
+      </div>
+    </li>
+    <li data-task-id="1.2">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.2: Create job_search_tracker.csv</strong>
+        <data data-files="job_search_tracker.csv"></data>
+        <p>Create <code>job_search_tracker.csv</code> with header row: <code>company,role,date_applied,status,notes</code>. Empty initially. Rows are appended when the user confirms an application was submitted.</p>
+      </div>
+    </li>
+  </ol>
+
+  <h3>2. Document Per-Board Extraction Patterns</h3>
+  <ol>
+    <li data-task-id="1.3">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.3: Add extraction patterns to SKILL.md</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Document the following patterns in the skill's search phase section:</p>
+        <dl>
+          <dt>Greenhouse</dt>
+          <dd>Job board pages at <code>/jobs</code>. Detail pages at <code>/jobs/[id]</code>. Use <code>browser_navigate</code> to the job board URL, <code>browser_snapshot</code> to extract listing titles and URLs, then <code>browser_navigate</code> to each detail page for full descriptions. Extraction: page <code>&lt;h1&gt;</code> for title, <code>.location</code> for location, main content area for body.</dd>
+          <dt>Ashby</dt>
+          <dd>Job board pages at <code>/[company]</code>. Detail pages at <code>/[company]/[id]</code>. JS-rendered; requires <code>waitUntil: "networkidle0"</code>. Extraction: page title for role, structured data blocks for requirements.</dd>
+          <dt>Wellfound</dt>
+          <dd>Search results load dynamically via infinite scroll. Use <code>browser_wait_for</code> with <code>selector: ".job-listing"</code>. May need <code>browser_evaluate</code> to scroll for more results. Detail pages at <code>/jobs/[id]</code>.</dd>
+          <dt>YC Jobs</dt>
+          <dd>Standard pagination at <code>/jobs?tags=ai&amp;page=N</code>. Listing cards contain title, company, description snippets. Filter by tags: <code>ai</code>, <code>ml</code>, <code>infrastructure</code>.</dd>
+          <dt>Google &rarr; LinkedIn</dt>
+          <dd>Google search queries (<code>site:linkedin.com/jobs "senior engineer" [keywords] San Francisco</code>) return public LinkedIn job posting URLs. Navigate to the URL via Obscura for the full description. For companies without Greenhouse/Ashby (OpenAI, Anthropic), Google search their career pages directly.</dd>
+        </dl>
+      </div>
+    </li>
+  </ol>
+
+  <h3>3. Rewrite SKILL.md</h3>
+  <ol>
+    <li data-task-id="1.4">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.4: Rewrite the skill's purpose, constraints, and state section</strong>
+        <data data-files=".opencode/skills/job-scraper/SKILL.md"></data>
+        <p>Update the YAML frontmatter: name stays <code>job-scraper</code>, description updated to mention SF, AI jobs, Obscura-powered. Change triggers to: <code>job scrape, find jobs, search jobs, new jobs, job search, scrape jobs</code>.</p>
+        <p>Update Purpose: "Your purpose is to search San Francisco Bay Area job boards for AI/ML engineering positions at Senior+ level, using Obscura MCP tools for browser automation. Deduplicate against previously seen jobs. Rapid-score and present ranked results."</p>
+        <p>State section: load <code>search-queries.md</code> for the configured search strategy. Load <code>job_scraper/seen_jobs.json</code> and <code>job_search_tracker.csv</code>. Recognize "fast" (priority 1-3) vs "deep" (all 5) vs "new" (diff against last_run) modes.</p>
+      </div>
+    </li>
+    <li data-task-id="1.5">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.5: Rewrite the Search phase</strong>
+        <p>Replace "Use the job portal CLI tools" with Obscura-based search. For Google-based queries: execute the search in Obscura by navigating to the Google search URL. For board-specific searches: navigate to the board's search endpoint. Extract listing URLs from result pages. Use parallel Obscura tool calls where the board supports it.</p>
+        <p>Pre-filter logic: extract title and company from search snippets. Skip if: below Senior level, requires relocation outside SF Bay Area, company+title already in <code>seen_jobs.json</code>, company+role in <code>job_search_tracker.csv</code>.</p>
+      </div>
+    </li>
+    <li data-task-id="1.6">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.6: Rewrite the Fetch &amp; Deduplicate phase</strong>
+        <p>For each promising result, navigate to the detail page via Obscura. Extract: title, company, location, posting date, full description (as markdown), application deadline (if listed). Skip any URL or company+title combo already in <code>seen_jobs.json</code>. Skip any company+role already in <code>job_search_tracker.csv</code>. Skip jobs with expired deadlines. Skip jobs outside commute range (San Jose is borderline, flag it).</p>
+        <p>After fetching, add ALL jobs to <code>seen_jobs.json</code> with title, company, URL, first_seen date, fit rating, and status. Only present jobs with status <code>new</code>.</p>
+      </div>
+    </li>
+    <li data-task-id="1.7">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.7: Rewrite the Fit Assessment phase (rapid scoring)</strong>
+        <p>Replace the existing rapid signal with SF AI context scoring:</p>
+        <dl>
+          <dt>High match</dt>
+          <dd>Primary skills directly involved (TypeScript, Python, Kubernetes, MCP, agentic systems, AI/ML engineering). Senior+ level. SF or remote-acceptable. Role type matches target (infrastructure, platform, agentic, frontier models, voice/multimodal).</dd>
+          <dt>Medium match</dt>
+          <dd>Secondary skills match (React, Node.js, Docker, AWS, CI/CD, adversarial ML). Senior level but adjacent role type (full-stack product, SRE, data engineering).</dd>
+          <dt>Low match</dt>
+          <dd>No skill match OR below Senior level OR requires relocation OR deal-breaker (dedicated people management, heavily process-driven). Skip these before fetching detail pages.</dd>
+        </dl>
+      </div>
+    </li>
+    <li data-task-id="1.8">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.8: Rewrite the Output phase</strong>
+        <p>Present new jobs in a table sorted by fit (high first): Fit, Title, Company, Location, Key Match Signals, URL. For each high-match job, add 2-3 bullets: why it matches, key requirements, any red flags. After presenting: "Want me to evaluate any of these in detail? Just give me the number(s)." If user picks a number, defer to Sprint 2's evaluation handoff logic.</p>
+      </div>
+    </li>
+    <li data-task-id="1.9">
+      <input type="checkbox">
+      <div>
+        <strong>Task 1.9: Add Google search queries to search-queries.md</strong>
+        <data data-files=".opencode/skills/job-scraper/search-queries.md"></data>
+        <p>Add Priority 4 section: LinkedIn via Google. Queries capture public LinkedIn postings for companies that don't use Greenhouse/Ashby. Include direct career page searches for frontier AI labs (OpenAI, Anthropic, Mistral, xAI).</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="tech-stack">
+  <h2>Tech Stack</h2>
+  <table>
+    <thead><tr><th>Component</th><th>Technology</th></tr></thead>
+    <tbody>
+      <tr><td>Browser automation</td><td>Obscura MCP tools (<code>browser_navigate</code>, <code>browser_snapshot</code>, <code>browser_evaluate</code>, <code>browser_click</code>, <code>browser_wait_for</code>)</td></tr>
+      <tr><td>Deduplication</td><td>JSON file (<code>seen_jobs.json</code>) with compound key</td></tr>
+      <tr><td>Application tracking</td><td>CSV file (<code>job_search_tracker.csv</code>)</td></tr>
+      <tr><td>Skill definition</td><td>Markdown with YAML frontmatter (<code>SKILL.md</code>)</td></tr>
+      <tr><td>Search queries</td><td>Markdown (<code>search-queries.md</code>), 5 priority tiers</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="verification">
+  <h2>Verification &amp; Acceptance Criteria</h2>
+  <ul>
+    <li>
+      <input type="checkbox">
+      <span><code>rg "jobindex-search\|jobbank-search\|jobnet-search\|jobdanmark-search" .opencode/skills/job-scraper/SKILL.md</code> returns zero matches</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>rg "Denmark\|Danish\|Copenhagen\|Sj&aelig;lland\|Hovedstaden" .opencode/skills/job-scraper/SKILL.md</code> returns zero matches (as geographic filter)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>rg "browser_navigate\|browser_snapshot\|Obscura" .opencode/skills/job-scraper/SKILL.md</code> returns positive matches</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>job_scraper/seen_jobs.json</code> exists with valid JSON: <code>{"seen": {}, "last_run": null}</code></span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>job_search_tracker.csv</code> exists with header row</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md frontmatter has no <code>allowed-tools</code> (permissions are in <code>opencode.json</code>)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md describes "fast" (priority 1-3) and "deep" (all 5) modes</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md describes "new" mode (diff against <code>last_run</code>)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md contains board-specific extraction guidance (Greenhouse, Ashby, Wellfound, YC, Google)</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md rapid scoring criteria reference SF location, Senior+ level, and primary/secondary skills from the candidate profile</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span><code>search-queries.md</code> includes Google queries for LinkedIn public postings and direct career page searches</span>
+    </li>
+    <li>
+      <input type="checkbox">
+      <span>SKILL.md is goal-oriented: purpose statement, constraints, no "follow these steps exactly in order"</span>
+    </li>
+  </ul>
+</section>
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="../../epic-overview.html">v1.1-obscura-job-search-pipeline</a>
+  <span aria-hidden="true"> / </span>
+  <a href="../index.html">Phase 0: Pipeline Construction</a>
+  <span aria-hidden="true"> / </span>
+  <span aria-current="page">Sprint 1: Scraper Skill Rewrite</span>
+</nav>
+
+</article>
+
+</body>
+</html>
