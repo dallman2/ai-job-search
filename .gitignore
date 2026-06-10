@@ -65,8 +65,9 @@ job_search_tracker.csv
 # Upskill reports (personal output)
 upskill/*.md
 
-# Agent usage logs
-.agents/
+# Agent usage logs (not the skills directory — .agents/skills/ is tracked infrastructure)
+.agents/logs/
+.agents/projects/
 
 # Database (personal job search data)
 data/
