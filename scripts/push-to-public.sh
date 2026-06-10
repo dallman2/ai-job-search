@@ -47,6 +47,17 @@ if ! git cherry-pick "$@"; then
   exit 1
 fi
 
+# Strip original commit author — replace with noreply for public repo
+GIT_AUTHOR_NAME="dallman2" GIT_AUTHOR_EMAIL="dallman2@users.noreply.github.com" \
+GIT_COMMITTER_NAME="dallman2" GIT_COMMITTER_EMAIL="dallman2@users.noreply.github.com" \
+git -c user.name="dallman2" -c user.email="dallman2@users.noreply.github.com" \
+  filter-branch -f --env-filter '
+    export GIT_AUTHOR_NAME="dallman2"
+    export GIT_AUTHOR_EMAIL="dallman2@users.noreply.github.com"
+    export GIT_COMMITTER_NAME="dallman2"
+    export GIT_COMMITTER_EMAIL="dallman2@users.noreply.github.com"
+  ' "$PUBLIC_REMOTE/$PUBLIC_BRANCH..HEAD" 2>/dev/null
+
 echo
 echo "Running personal data audit..."
 if ! bash scripts/audit-personal-data.sh; then
